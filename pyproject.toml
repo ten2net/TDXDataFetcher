@@ -1,0 +1,16 @@
+[project]
+name = "tdxapi"
+version = "0.1.0"
+description = "通达信行情数据自研接口，不依赖客户端"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
