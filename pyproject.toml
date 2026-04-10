@@ -1,5 +1,5 @@
 [project]
-name = "tdxapi"
+name = "pytdx2"
 version = "0.1.0"
 description = "通达信行情数据自研接口，不依赖客户端"
 readme = "README.md"
