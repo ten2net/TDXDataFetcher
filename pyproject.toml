@@ -2,14 +2,40 @@
 name = "tdxapi"
 version = "0.1.0"
 description = "通达信行情数据自研接口，不依赖客户端"
+readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.9"
+authors = [
+    {name = "Author", email = "author@example.com"},
+]
+keywords = ["tdx", "通达信", "stock", "行情", "a股", "量化", "finance"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0"]
+dev = ["pytest>=7.0", "build>=0.10", "twine>=4.0"]
+
+[project.urls]
+Homepage = "https://github.com/ten2net/tdxapi"
+Repository = "https://github.com/ten2net/tdxapi"
+Documentation = "https://github.com/ten2net/tdxapi#readme"
+Issues = "https://github.com/ten2net/tdxapi/issues"
 
 [build-system]
-requires = ["setuptools>=68.0"]
+requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

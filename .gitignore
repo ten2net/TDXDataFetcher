@@ -42,3 +42,4 @@ test_connect.py
 # Local config
 .env
 *.local
+.claude/
