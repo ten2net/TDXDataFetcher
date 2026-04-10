@@ -4,7 +4,6 @@
 """
 
 import asyncio
-import struct
 import zlib
 from typing import Optional, Union, List, Tuple, Callable, Dict, Any, AsyncGenerator
 from dataclasses import dataclass
@@ -12,7 +11,6 @@ from dataclasses import dataclass
 from tdxapi.protocol.constants import (
     DEFAULT_SERVERS,
     RSP_HEADER_LEN,
-    Category,
     SETUP_CMD1,
     SETUP_CMD2,
     SETUP_CMD3,
@@ -27,7 +25,6 @@ from tdxapi.protocol.requests import (
     build_minute_time_request,
     build_transaction_request,
     build_history_minute_request,
-    build_history_transaction_request,
     build_xdxr_request,
     build_finance_request,
 )

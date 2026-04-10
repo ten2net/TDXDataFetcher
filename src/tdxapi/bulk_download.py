@@ -7,7 +7,6 @@
 
 import asyncio
 import json
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path

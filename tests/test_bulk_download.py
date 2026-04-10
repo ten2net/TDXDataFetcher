@@ -617,7 +617,7 @@ class TestBulkDownloaderEdgeCases:
         with pytest.raises(RuntimeError, match="客户端未初始化"):
             downloader._get_client()
 
-    def test_reset_progress(self):
+    async def test_reset_progress(self):
         """测试重置进度"""
         downloader = BulkDownloader()
         downloader._progress = DownloadProgress(total=100, completed=50)
@@ -627,7 +627,7 @@ class TestBulkDownloaderEdgeCases:
         assert downloader._progress.total == 0
         assert downloader._progress.completed == 0
 
-    def test_stop(self):
+    async def test_stop(self):
         """测试停止下载"""
         downloader = BulkDownloader()
 

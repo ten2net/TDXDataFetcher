@@ -4,7 +4,7 @@
 提供数据校验、缺失数据检测、除权除息复权计算、数据对齐等功能。
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Tuple, Set, Union, Any
 from enum import Enum

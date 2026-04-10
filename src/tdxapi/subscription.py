@@ -6,7 +6,7 @@
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Set, Tuple, Union, Any
 from datetime import datetime
 

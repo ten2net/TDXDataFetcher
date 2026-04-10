@@ -83,7 +83,8 @@ class TestAsyncClientConnection:
     async def test_close_connection(self):
         """测试关闭连接"""
         client = AsyncTdxClient()
-        mock_writer = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.wait_closed = AsyncMock()
         client._writer = mock_writer
         client._reader = AsyncMock()
 
