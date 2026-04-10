@@ -34,7 +34,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run tests
-        run: pytest -v
+        run: pytest -v -m "not network" --ignore=tests/test_real_network.py
 
   build-and-publish:
     needs: test-before-publish
