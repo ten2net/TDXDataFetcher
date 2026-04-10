@@ -60,7 +60,7 @@ TDXDataFetcher (ten2net-tdxapi) 是一个通达信行情数据直连库，已实
 | 4.1 | 移动平均线 (MA) | 实现 MA5/10/20/60/120/250 | - | cc:完工 |
 | 4.2 | MACD 指标 | 实现 DIF/DEA/MACD 计算 | 4.1 | cc:TODO |
 | 4.3 | KDJ 指标 | 实现 K/D/J 值计算 | 4.1 | cc:完工 |
-| 4.4 | RSI 指标 | 实现 RSI6/12/24 计算 | 4.1 | cc:TODO |
+| 4.4 | RSI 指标 | 实现 RSI6/12/24 计算 | 4.1 | cc:完工 |
 | 4.5 | 布林带 (BOLL) | 实现上轨/中轨/下轨计算 | 4.1 | cc:TODO |
 | 4.6 | 成交量指标 | 实现 VOL、OBV 计算 | - | cc:完工 |
 | 4.7 | 指标组合输出 | 返回包含所有指标的 DataFrame | 4.1-4.6 | cc:TODO |
