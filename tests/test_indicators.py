@@ -3,14 +3,15 @@
 """
 
 import unittest
-from datetime import datetime, timedelta, timedelta
+from datetime import datetime, timedelta
 from tdxapi.models import Bar
 from tdxapi.indicators import (
     macd,
     vol, obv, vol_ma,
     ma, ema, wma, MA, calculate_all_ma,
     rsi, rsi_multi, RSI,
-    kdj, KDJ
+    kdj, KDJ,
+    std, BOLL, boll
 )
 
 
