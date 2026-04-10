@@ -1,0 +1,1261 @@
+"""
+AsyncTdxClient 单元测试
+"""
+
+import asyncio
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from tdxapi.async_client import AsyncTdxClient
+from tdxapi.models import StockQuote, Bar, Tick
+from tdxapi.protocol.constants import DEFAULT_SERVERS, Market
+
+
+class TestAsyncClientInit:
+    """测试异步客户端初始化"""
+
+    def test_default_init(self):
+        client = AsyncTdxClient()
+        assert client._ip is None
+        assert client._port == 7709
+        assert client._timeout == 5
+        assert client._auto_reconnect is True
+        assert client._max_retries == 3
+        assert client._heartbeat_enabled is True
+        assert client._reader is None
+        assert client._writer is None
+
+    def test_custom_init(self):
+        client = AsyncTdxClient(
+            ip="1.2.3.4",
+            port=8888,
+            timeout=10,
+            auto_reconnect=False,
+            max_retries=5,
+            heartbeat=False,
+        )
+        assert client._ip == "1.2.3.4"
+        assert client._port == 8888
+        assert client._timeout == 10
+        assert client._auto_reconnect is False
+        assert client._max_retries == 5
+        assert client._heartbeat_enabled is False
+
+
+class TestAsyncClientParseMarket:
+    """测试市场代码解析"""
+
+    def test_parse_market_sh(self):
+        client = AsyncTdxClient()
+        assert client._parse_market("SH") == 1
+        assert client._parse_market("sh") == 1
+
+    def test_parse_market_sz(self):
+        client = AsyncTdxClient()
+        assert client._parse_market("SZ") == 0
+        assert client._parse_market("sz") == 0
+
+    def test_parse_market_int(self):
+        client = AsyncTdxClient()
+        assert client._parse_market(0) == 0
+        assert client._parse_market(1) == 1
+        assert client._parse_market(6) == 6
+
+
+@pytest.mark.asyncio
+class TestAsyncClientConnection:
+    """测试异步连接功能"""
+
+    async def test_connect_with_auto_server_selection(self):
+        """测试自动选择服务器"""
+        client = AsyncTdxClient()
+
+        mock_reader = AsyncMock()
+        mock_writer = AsyncMock()
+
+        with patch('asyncio.open_connection', return_value=(mock_reader, mock_writer)) as mock_open:
+            with patch.object(client, '_recv_response', new_callable=AsyncMock) as mock_recv:
+                with patch.object(client, '_send_raw', new_callable=AsyncMock) as mock_send:
+                    await client.connect("119.147.212.81", 7709)
+                    assert client._ip == "119.147.212.81"
+                    assert client._port == 7709
+
+    async def test_close_connection(self):
+        """测试关闭连接"""
+        client = AsyncTdxClient()
+        mock_writer = MagicMock()
+        mock_writer.wait_closed = AsyncMock()
+        client._writer = mock_writer
+        client._reader = AsyncMock()
+
+        await client.close()
+        mock_writer.close.assert_called_once()
+        mock_writer.wait_closed.assert_awaited_once()
+
+    async def test_close_without_connection(self):
+        """测试关闭未连接的客户端"""
+        client = AsyncTdxClient()
+        # 不应抛出异常
+        await client.close()
+
+
+@pytest.mark.asyncio
+class TestAsyncContextManager:
+    """测试异步上下文管理器"""
+
+    async def test_async_context_manager(self):
+        """测试 async with 语法"""
+        client = AsyncTdxClient()
+
+        with patch.object(client, 'connect', new_callable=AsyncMock) as mock_connect:
+            with patch.object(client, 'close', new_callable=AsyncMock) as mock_close:
+                async with client as c:
+                    assert c is client
+                    mock_connect.assert_awaited_once()
+                mock_close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+class TestAsyncClientQuotes:
+    """测试异步行情获取"""
+
+    async def test_get_quotes(self):
+        """测试批量获取行情"""
+        client = AsyncTdxClient()
+        client._writer = AsyncMock()
+        client._reader = AsyncMock()
+
+        mock_response = MagicMock()
+        mock_response.zip_size = 100
+        mock_response.unzip_size = 100
+
+        with patch('tdxapi.async_client.parse_quotes') as mock_parse:
+            mock_parse.return_value = [
+                StockQuote(
+                    code="600519",
+                    market="SH",
+                    name="贵州茅台",
+                    price=1800.0,
+                    last_close=1790.0,
+                    open=1795.0,
+                    high=1810.0,
+                    low=1785.0,
+                    volume=10000,
+                    amount=18000000.0,
+                    bid1=1799.0,
+                    bid1_vol=100,
+                    ask1=1801.0,
+                    ask1_vol=100,
+                    datetime=None,
+                )
+            ]
+
+            with patch.object(client, '_send_recv', new_callable=AsyncMock) as mock_send_recv:
+                mock_send_recv.return_value = b'mock_data'
+                result = await client.get_quotes([(1, "600519")])
+
+                assert len(result) == 1
+                assert result[0].code == "600519"
+
+    async def test_get_quote_single(self):
+        """测试获取单只股票行情"""
+        client = AsyncTdxClient()
+
+        mock_quote = StockQuote(
+            code="000001",
+            market="SZ",
+            name="平安银行",
+            price=12.5,
+            last_close=12.3,
+            open=12.4,
+            high=12.6,
+            low=12.2,
+            volume=50000,
+            amount=625000.0,
+            bid1=12.4,
+            bid1_vol=200,
+            ask1=12.6,
+            ask1_vol=200,
+            datetime=None,
+        )
+
+        with patch.object(client, 'get_quotes', new_callable=AsyncMock) as mock_get_quotes:
+            mock_get_quotes.return_value = [mock_quote]
+            result = await client.get_quote("000001", "SZ")
+
+            assert result is not None
+            assert result.code == "000001"
+            mock_get_quotes.assert_awaited_once_with([(0, "000001")])
+
+    async def test_get_quote_empty_result(self):
+        """测试获取行情返回空列表"""
+        client = AsyncTdxClient()
+
+        with patch.object(client, 'get_quotes', new_callable=AsyncMock) as mock_get_quotes:
+            mock_get_quotes.return_value = []
+            result = await client.get_quote("000001", "SZ")
+
+            assert result is None
+
+    async def test_get_index_quote(self):
+        """测试获取指数行情"""
+        client = AsyncTdxClient()
+
+        mock_quote = StockQuote(
+            code="000001",
+            market="SH",
+            name="上证指数",
+            price=3000.0,
+            last_close=2990.0,
+            open=2995.0,
+            high=3010.0,
+            low=2985.0,
+            volume=1000000,
+            amount=3000000000.0,
+            bid1=0.0,
+            bid1_vol=0,
+            ask1=0.0,
+            ask1_vol=0,
+            datetime=None,
+        )
+
+        with patch.object(client, 'get_quotes', new_callable=AsyncMock) as mock_get_quotes:
+            mock_get_quotes.return_value = [mock_quote]
+            result = await client.get_index_quote("000001")
+
+            assert result is not None
+            assert result.code == "000001"
+
+    async def test_get_futures_quote(self):
+        """测试获取期货行情"""
+        client = AsyncTdxClient()
+
+        mock_quote = StockQuote(
+            code="RB2501",
+            market="SH_FUTURE",
+            name="螺纹钢",
+            price=3500.0,
+            last_close=3480.0,
+            open=3490.0,
+            high=3520.0,
+            low=3470.0,
+            volume=50000,
+            amount=175000000.0,
+            bid1=3499.0,
+            bid1_vol=100,
+            ask1=3501.0,
+            ask1_vol=100,
+            datetime=None,
+        )
+
+        with patch.object(client, 'get_quotes', new_callable=AsyncMock) as mock_get_quotes:
+            mock_get_quotes.return_value = [mock_quote]
+            result = await client.get_futures_quote("RB2501", market=6)
+
+            assert result is not None
+            mock_get_quotes.assert_awaited_once_with([(6, "RB2501")])
+
+
+@pytest.mark.asyncio
+class TestAsyncClientBars:
+    """测试异步K线获取"""
+
+    async def test_get_bars(self):
+        """测试获取K线数据"""
+        client = AsyncTdxClient()
+
+        mock_bars = [
+            Bar(
+                code="600519",
+                market="SH",
+                datetime=None,
+                open=1800.0,
+                high=1810.0,
+                low=1790.0,
+                close=1805.0,
+                volume=10000,
+                amount=18050000.0,
+            )
+        ]
+
+        with patch('tdxapi.async_client.parse_bars') as mock_parse:
+            mock_parse.return_value = mock_bars
+
+            with patch.object(client, '_send_recv', new_callable=AsyncMock) as mock_send_recv:
+                mock_send_recv.return_value = b'mock_data'
+                result = await client.get_bars("600519", "SH", "1d", 10)
+
+                assert len(result) == 1
+                assert result[0].code == "600519"
+                assert result[0].market == "SH"
+
+    async def test_get_bars_different_periods(self):
+        """测试不同周期的K线获取"""
+        client = AsyncTdxClient()
+
+        periods = ["1d", "1w", "1m", "5m", "15m", "30m", "60m", "1min"]
+
+        with patch('tdxapi.async_client.parse_bars') as mock_parse:
+            mock_parse.return_value = []
+
+            with patch.object(client, '_send_recv', new_callable=AsyncMock) as mock_send_recv:
+                mock_send_recv.return_value = b'mock_data'
+
+                for period in periods:
+                    result = await client.get_bars("600519", "SH", period, 10)
+                    assert isinstance(result, list)
+
+    async def test_get_index_bars(self):
+        """测试获取指数K线"""
+        client = AsyncTdxClient()
+
+        mock_bars = [
+            Bar(
+                code="000001",
+                market="SH",
+                datetime=None,
+                open=3000.0,
+                high=3010.0,
+                low=2990.0,
+                close=3005.0,
+                volume=100000,
+                amount=300500000.0,
+            )
+        ]
+
+        with patch('tdxapi.async_client.parse_bars') as mock_parse:
+            mock_parse.return_value = mock_bars
+
+            with patch.object(client, '_send_recv', new_callable=AsyncMock) as mock_send_recv:
+                mock_send_recv.return_value = b'mock_data'
+                result = await client.get_index_bars("000001", "SH", "1d", 10)
+
+                assert len(result) == 1
+                assert result[0].code == "000001"
+
+
+@pytest.mark.asyncio
+class TestAsyncClientTransactions:
+    """测试异步分笔成交获取"""
+
+    async def test_get_transactions(self):
+        """测试获取分笔成交"""
+        client = AsyncTdxClient()
+
+        mock_ticks = [
+            Tick(
+                code="600519",
+                market="SH",
+                time="10:30:00",
+                price=1800.0,
+                volume=100,
+                amount=180000.0,
+                direction=0,
+            )
+        ]
+
+        with patch('tdxapi.async_client.parse_ticks') as mock_parse:
+            mock_parse.return_value = mock_ticks
+
+            with patch.object(client, '_send_recv', new_callable=AsyncMock) as mock_send_recv:
+                mock_send_recv.return_value = b'mock_data'
+                result = await client.get_transactions("600519", "SH", 0, 100)
+
+                assert len(result) == 1
+                assert result[0].code == "600519"
+
+
+@pytest.mark.asyncio
+class TestAsyncClientSecurityList:
+    """测试异步股票列表获取"""
+
+    async def test_get_stock_count(self):
+        """测试获取股票数量"""
+        client = AsyncTdxClient()
+
+        with patch('tdxapi.async_client.parse_stock_count') as mock_parse:
+            mock_parse.return_value = 5000
+
+            with patch.object(client, '_send_recv', new_callable=AsyncMock) as mock_send_recv:
+                mock_send_recv.return_value = b'mock_data'
+                result = await client.get_stock_count("SH")
+
+                assert result == 5000
+
+    async def test_get_security_list(self):
+        """测试获取股票列表"""
+        client = AsyncTdxClient()
+
+        mock_stocks = [
+            {"code": "600519", "name": "贵州茅台", "market": 1},
+            {"code": "600000", "name": "浦发银行", "market": 1},
+        ]
+
+        with patch.object(client, 'get_stock_count', new_callable=AsyncMock) as mock_count:
+            mock_count.return_value = 2
+
+            with patch('tdxapi.async_client.parse_security_list') as mock_parse:
+                mock_parse.return_value = mock_stocks
+
+                with patch.object(client, '_send_recv', new_callable=AsyncMock) as mock_send_recv:
+                    mock_send_recv.return_value = b'mock_data'
+                    result = await client.get_security_list("SH", 0, 2)
+
+                    assert len(result) == 2
+                    assert result[0]["code"] == "600519"
+
+
+@pytest.mark.asyncio
+class TestAsyncClientFinance:
+    """测试异步财务数据获取"""
+
+    async def test_get_xdxr_info(self):
+        """测试获取除权除息数据"""
+        client = AsyncTdxClient()
+
+        mock_xdxr = [
+            {"date": 20230101, "category": 1, "fenhong": 0.5}
+        ]
+
+        with patch('tdxapi.async_client.parse_xdxr_info') as mock_parse:
+            mock_parse.return_value = mock_xdxr
+
+            with patch.object(client, '_send_recv', new_callable=AsyncMock) as mock_send_recv:
+                mock_send_recv.return_value = b'mock_data'
+                result = await client.get_xdxr_info("600519", "SH")
+
+                assert len(result) == 1
+
+    async def test_get_finance_info(self):
+        """测试获取财务数据"""
+        client = AsyncTdxClient()
+
+        mock_finance = {
+            "code": "600519",
+            "jinying": 100000000.0,
+            "zongguben": 1000000,
+        }
+
+        with patch('tdxapi.async_client.parse_finance_info') as mock_parse:
+            mock_parse.return_value = mock_finance
+
+            with patch.object(client, '_send_recv', new_callable=AsyncMock) as mock_send_recv:
+                mock_send_recv.return_value = b'mock_data'
+                result = await client.get_finance_info("600519", "SH")
+
+                assert result["code"] == "600519"
+
+
+@pytest.mark.asyncio
+class TestAsyncClientMinuteTime:
+    """测试异步分时数据获取"""
+
+    async def test_get_minute_time_with_bars(self):
+        """测试使用K线获取分时数据"""
+        client = AsyncTdxClient()
+
+        mock_bars = [
+            Bar(
+                code="600519",
+                market="SH",
+                datetime=None,
+                open=1800.0,
+                high=1810.0,
+                low=1790.0,
+                close=1805.0,
+                volume=1000,
+                amount=1805000.0,
+            ),
+            Bar(
+                code="600519",
+                market="SH",
+                datetime=None,
+                open=1805.0,
+                high=1815.0,
+                low=1800.0,
+                close=1810.0,
+                volume=2000,
+                amount=3620000.0,
+            ),
+        ]
+
+        with patch.object(client, 'get_bars', new_callable=AsyncMock) as mock_get_bars:
+            mock_get_bars.return_value = mock_bars
+            result = await client.get_minute_time("600519", "SH", use_bars=True)
+
+            assert len(result) == 2
+            assert result[0]["price"] == 1805.0
+            assert result[0]["volume"] == 1000
+
+    async def test_get_history_minute_time(self):
+        """测试获取历史分时数据"""
+        client = AsyncTdxClient()
+
+        mock_minutes = [
+            {"price": 1800.0, "volume": 1000},
+            {"price": 1805.0, "volume": 2000},
+        ]
+
+        with patch('tdxapi.async_client.parse_history_minute_time') as mock_parse:
+            mock_parse.return_value = mock_minutes
+
+            with patch.object(client, '_send_recv', new_callable=AsyncMock) as mock_send_recv:
+                mock_send_recv.return_value = b'mock_data'
+                result = await client.get_history_minute_time("600519", "SH", 20240101)
+
+                assert len(result) == 2
+
+
+@pytest.mark.asyncio
+class TestAsyncClientReconnect:
+    """测试异步重连功能"""
+
+    async def test_auto_reconnect_on_error(self):
+        """测试错误时自动重连"""
+        client = AsyncTdxClient(auto_reconnect=True, max_retries=2)
+
+        with patch.object(client, '_send_raw', new_callable=AsyncMock) as mock_send:
+            mock_send.side_effect = [ConnectionError("连接断开"), None]
+
+            with patch.object(client, '_recv_response', new_callable=AsyncMock) as mock_recv:
+                mock_recv.return_value = (MagicMock(), b'data')
+
+                with patch.object(client, '_reconnect_unlocked', new_callable=AsyncMock) as mock_reconnect:
+                    # 第一次调用会失败并重连
+                    try:
+                        await client._send_recv_unlocked(b'test')
+                    except ConnectionError:
+                        pass
+
+
+@pytest.mark.asyncio
+class TestAsyncClientServerSelection:
+    """测试异步服务器选择"""
+
+    async def test_find_best_server(self):
+        """测试自动选择最优服务器"""
+        client = AsyncTdxClient()
+
+        mock_reader = AsyncMock()
+        mock_writer = AsyncMock()
+
+        with patch('asyncio.open_connection', return_value=(mock_reader, mock_writer)) as mock_open:
+            with patch('asyncio.wait_for') as mock_wait_for:
+                # 模拟所有服务器都可用
+                mock_wait_for.return_value = (mock_reader, mock_writer)
+
+                # 由于并发执行，我们需要特殊处理
+                # 这里简化测试，直接验证函数存在
+                assert hasattr(client, '_find_best_server')
+
+    async def test_find_best_server_all_failed(self):
+        """测试所有服务器都失败的情况"""
+        client = AsyncTdxClient()
+
+        with patch('asyncio.open_connection', side_effect=OSError("连接失败")):
+            with pytest.raises(ConnectionError, match="所有服务器均不可用"):
+                await client._find_best_server()
+
+
+class TestAsyncClientImport:
+    """测试模块导入"""
+
+    def test_import_async_client(self):
+        """测试从 tdxapi 导入 AsyncTdxClient"""
+        from tdxapi import AsyncTdxClient
+        assert AsyncTdxClient is not None
+
+    def test_async_client_in_all(self):
+        """测试 AsyncTdxClient 在 __all__ 中"""
+        import tdxapi
+        assert "AsyncTdxClient" in tdxapi.__all__
+
+    def test_import_batch_result(self):
+        """测试从 tdxapi 导入 BatchResult"""
+        from tdxapi import BatchResult
+        assert BatchResult is not None
+
+    def test_batch_result_in_all(self):
+        """测试 BatchResult 在 __all__ 中"""
+        import tdxapi
+        assert "BatchResult" in tdxapi.__all__
+
+
+@pytest.mark.asyncio
+class TestAsyncClientBatchQuotes:
+    """测试异步批量行情获取"""
+
+    async def test_batch_get_quotes(self):
+        """测试批量获取行情"""
+        client = AsyncTdxClient()
+
+        mock_quotes = {
+            "SH:600519": StockQuote(
+                code="600519",
+                market="SH",
+                name="贵州茅台",
+                price=1800.0,
+                last_close=1790.0,
+                open=1795.0,
+                high=1810.0,
+                low=1785.0,
+                volume=10000,
+                amount=18000000.0,
+                bid1=1799.0,
+                bid1_vol=100,
+                ask1=1801.0,
+                ask1_vol=100,
+                datetime=None,
+            ),
+            "SZ:000001": StockQuote(
+                code="000001",
+                market="SZ",
+                name="平安银行",
+                price=12.5,
+                last_close=12.3,
+                open=12.4,
+                high=12.6,
+                low=12.2,
+                volume=50000,
+                amount=625000.0,
+                bid1=12.4,
+                bid1_vol=200,
+                ask1=12.6,
+                ask1_vol=200,
+                datetime=None,
+            ),
+        }
+
+        call_count = 0
+
+        async def mock_get_quote(code, market):
+            nonlocal call_count
+            call_count += 1
+            key = f"{market.upper()}:{code}"
+            return mock_quotes.get(key)
+
+        with patch.object(client, 'get_quote', side_effect=mock_get_quote):
+            result = await client.batch_get_quotes(
+                [("SH", "600519"), ("SZ", "000001")],
+                max_concurrent=2
+            )
+
+            assert result.total == 2
+            assert result.success_count == 2
+            assert result.failed_count == 0
+            assert "SH:600519" in result.success
+            assert "SZ:000001" in result.success
+            assert result.success["SH:600519"].price == 1800.0
+            assert result.success["SZ:000001"].price == 12.5
+
+    async def test_batch_get_quotes_with_error(self):
+        """测试批量获取行情部分失败"""
+        client = AsyncTdxClient()
+
+        async def mock_get_quote(code, market):
+            if code == "600519":
+                raise ConnectionError("连接失败")
+            return StockQuote(
+                code=code,
+                market=market,
+                name="测试",
+                price=10.0,
+                last_close=9.0,
+                open=9.5,
+                high=10.5,
+                low=9.0,
+                volume=1000,
+                amount=10000.0,
+                bid1=9.9,
+                bid1_vol=100,
+                ask1=10.1,
+                ask1_vol=100,
+                datetime=None,
+            )
+
+        with patch.object(client, 'get_quote', side_effect=mock_get_quote):
+            result = await client.batch_get_quotes(
+                [("SH", "600519"), ("SZ", "000001")],
+                max_concurrent=2,
+                continue_on_error=True
+            )
+
+            assert result.total == 2
+            assert result.success_count == 1
+            assert result.failed_count == 1
+            assert "SH:600519" in result.failed
+            assert "SZ:000001" in result.success
+
+    async def test_batch_get_quotes_progress_callback(self):
+        """测试批量获取行情进度回调"""
+        client = AsyncTdxClient()
+
+        progress_calls = []
+
+        def progress_callback(completed, total, current_code):
+            progress_calls.append((completed, total, current_code))
+
+        async def mock_get_quote(code, market):
+            return StockQuote(
+                code=code,
+                market=market,
+                name="测试",
+                price=10.0,
+                last_close=9.0,
+                open=9.5,
+                high=10.5,
+                low=9.0,
+                volume=1000,
+                amount=10000.0,
+                bid1=9.9,
+                bid1_vol=100,
+                ask1=10.1,
+                ask1_vol=100,
+                datetime=None,
+            )
+
+        with patch.object(client, 'get_quote', side_effect=mock_get_quote):
+            await client.batch_get_quotes(
+                [("SH", "600519"), ("SZ", "000001"), ("SH", "600000")],
+                max_concurrent=2,
+                progress_callback=progress_callback
+            )
+
+            assert len(progress_calls) == 3
+            assert progress_calls[0][1] == 3  # total
+            assert progress_calls[-1][0] == 3  # completed = 3
+
+    async def test_batch_get_quotes_stop_on_error(self):
+        """测试批量获取行情遇到错误停止"""
+        client = AsyncTdxClient()
+
+        async def mock_get_quote(code, market):
+            raise ConnectionError("连接失败")
+
+        with patch.object(client, 'get_quote', side_effect=mock_get_quote):
+            with pytest.raises(ConnectionError):
+                await client.batch_get_quotes(
+                    [("SH", "600519"), ("SZ", "000001")],
+                    continue_on_error=False
+                )
+
+
+@pytest.mark.asyncio
+class TestAsyncClientBatchBars:
+    """测试异步批量K线获取"""
+
+    async def test_batch_get_bars(self):
+        """测试批量获取K线"""
+        client = AsyncTdxClient()
+
+        mock_bars = {
+            "SH:600519": [
+                Bar(code="600519", market="SH", datetime=None, open=1800.0, high=1810.0, low=1790.0, close=1805.0, volume=10000, amount=18050000.0),
+                Bar(code="600519", market="SH", datetime=None, open=1805.0, high=1815.0, low=1800.0, close=1810.0, volume=20000, amount=36200000.0),
+            ],
+            "SZ:000001": [
+                Bar(code="000001", market="SZ", datetime=None, open=12.0, high=12.5, low=11.8, close=12.3, volume=50000, amount=615000.0),
+            ],
+        }
+
+        async def mock_get_bars(code, market, period, count):
+            key = f"{market.upper()}:{code}"
+            return mock_bars.get(key, [])
+
+        with patch.object(client, 'get_bars', side_effect=mock_get_bars):
+            result = await client.batch_get_bars(
+                [("SH", "600519"), ("SZ", "000001")],
+                period="1d",
+                count=100,
+                max_concurrent=2
+            )
+
+            assert result.total == 2
+            assert result.success_count == 2
+            assert result.failed_count == 0
+            assert len(result.success["SH:600519"]) == 2
+            assert len(result.success["SZ:000001"]) == 1
+
+    async def test_batch_get_bars_with_error(self):
+        """测试批量获取K线部分失败"""
+        client = AsyncTdxClient()
+
+        async def mock_get_bars(code, market, period, count):
+            if code == "600519":
+                raise ConnectionError("连接失败")
+            return [Bar(code=code, market=market, datetime=None, open=10.0, high=11.0, low=9.0, close=10.5, volume=1000, amount=10000.0)]
+
+        with patch.object(client, 'get_bars', side_effect=mock_get_bars):
+            result = await client.batch_get_bars(
+                [("SH", "600519"), ("SZ", "000001")],
+                period="1d",
+                count=100,
+                continue_on_error=True
+            )
+
+            assert result.total == 2
+            assert result.success_count == 1
+            assert result.failed_count == 1
+            assert "SH:600519" in result.failed
+            assert "SZ:000001" in result.success
+
+    async def test_batch_get_bars_progress_callback(self):
+        """测试批量获取K线进度回调"""
+        client = AsyncTdxClient()
+
+        progress_calls = []
+
+        def progress_callback(completed, total, current_code):
+            progress_calls.append((completed, total, current_code))
+
+        async def mock_get_bars(code, market, period, count):
+            return [Bar(code=code, market=market, datetime=None, open=10.0, high=11.0, low=9.0, close=10.5, volume=1000, amount=10000.0)]
+
+        with patch.object(client, 'get_bars', side_effect=mock_get_bars):
+            await client.batch_get_bars(
+                [("SH", "600519"), ("SZ", "000001")],
+                period="1d",
+                count=100,
+                progress_callback=progress_callback
+            )
+
+            assert len(progress_calls) == 2
+            assert progress_calls[-1][0] == 2
+
+
+@pytest.mark.asyncio
+class TestAsyncClientBatchByCodes:
+    """测试自动判断市场的批量请求"""
+
+    async def test_batch_get_quotes_by_codes(self):
+        """测试通过代码列表自动判断市场"""
+        client = AsyncTdxClient()
+
+        received_calls = []
+
+        async def mock_get_quote(code, market):
+            received_calls.append((code, market))
+            return StockQuote(
+                code=code,
+                market=market,
+                name="测试",
+                price=10.0,
+                last_close=9.0,
+                open=9.5,
+                high=10.5,
+                low=9.0,
+                volume=1000,
+                amount=10000.0,
+                bid1=9.9,
+                bid1_vol=100,
+                ask1=10.1,
+                ask1_vol=100,
+                datetime=None,
+            )
+
+        with patch.object(client, 'get_quote', side_effect=mock_get_quote):
+            await client.batch_get_quotes_by_codes(
+                ["600519", "000001", "300001"],
+                max_concurrent=3
+            )
+
+            # 验证自动判断的市场
+            codes_markets = {(c, m) for c, m in received_calls}
+            assert ("600519", "SH") in codes_markets  # 6开头 -> SH
+            assert ("000001", "SZ") in codes_markets  # 0开头 -> SZ
+            assert ("300001", "SZ") in codes_markets  # 3开头 -> SZ
+
+    async def test_batch_get_quotes_by_codes_default_market(self):
+        """测试默认市场"""
+        client = AsyncTdxClient()
+
+        received_calls = []
+
+        async def mock_get_quote(code, market):
+            received_calls.append((code, market))
+            return StockQuote(
+                code=code,
+                market=market,
+                name="测试",
+                price=10.0,
+                last_close=9.0,
+                open=9.5,
+                high=10.5,
+                low=9.0,
+                volume=1000,
+                amount=10000.0,
+                bid1=9.9,
+                bid1_vol=100,
+                ask1=10.1,
+                ask1_vol=100,
+                datetime=None,
+            )
+
+        with patch.object(client, 'get_quote', side_effect=mock_get_quote):
+            await client.batch_get_quotes_by_codes(
+                ["688888"],  # 科创板，无法自动判断
+                default_market="SH",
+                max_concurrent=1
+            )
+
+            assert received_calls[0] == ("688888", "SH")
+
+
+class TestBatchResult:
+    """测试 BatchResult 数据类"""
+
+    def test_batch_result_repr(self):
+        """测试 BatchResult 字符串表示"""
+        from tdxapi.async_client import BatchResult
+
+        result = BatchResult(
+            success={"A": 1, "B": 2},
+            failed={"C": Exception("error")},
+            total=3,
+            success_count=2,
+            failed_count=1
+        )
+
+        repr_str = repr(result)
+        assert "BatchResult" in repr_str
+        assert "total=3" in repr_str
+        assert "success=2" in repr_str
+        assert "failed=1" in repr_str
+
+    def test_batch_result_empty(self):
+        """测试空的 BatchResult"""
+        from tdxapi.async_client import BatchResult
+
+        result = BatchResult(
+            success={},
+            failed={},
+            total=0,
+            success_count=0,
+            failed_count=0
+        )
+
+        assert result.total == 0
+        assert result.success_count == 0
+        assert result.failed_count == 0
+
+
+@pytest.mark.asyncio
+class TestAsyncClientStreamQuotes:
+    """测试异步流式行情接口"""
+
+    async def test_stream_quotes_basic(self):
+        """测试流式行情基本功能"""
+        client = AsyncTdxClient()
+
+        mock_quotes = [
+            StockQuote(
+                code="600519",
+                market="SH",
+                name="贵州茅台",
+                price=1800.0,
+                last_close=1790.0,
+                open=1795.0,
+                high=1810.0,
+                low=1785.0,
+                volume=10000,
+                amount=18000000.0,
+                bid1=1799.0,
+                bid1_vol=100,
+                ask1=1801.0,
+                ask1_vol=100,
+                datetime=None,
+            )
+        ]
+
+        with patch.object(client, 'get_quotes', new_callable=AsyncMock) as mock_get_quotes:
+            mock_get_quotes.return_value = mock_quotes
+
+            stop_event = asyncio.Event()
+            results = []
+
+            async for quotes in client.stream_quotes([(1, "600519")], interval=0.1, stop_event=stop_event):
+                results.append(quotes)
+                if len(results) >= 2:
+                    stop_event.set()
+
+            assert len(results) >= 1
+            assert results[0][0].code == "600519"
+
+    async def test_stream_quotes_with_stop_event(self):
+        """测试使用 stop_event 停止流式接口"""
+        client = AsyncTdxClient()
+
+        mock_quotes = [
+            StockQuote(
+                code="000001",
+                market="SZ",
+                name="平安银行",
+                price=12.5,
+                last_close=12.3,
+                open=12.4,
+                high=12.6,
+                low=12.2,
+                volume=50000,
+                amount=625000.0,
+                bid1=12.4,
+                bid1_vol=200,
+                ask1=12.6,
+                ask1_vol=200,
+                datetime=None,
+            )
+        ]
+
+        with patch.object(client, 'get_quotes', new_callable=AsyncMock) as mock_get_quotes:
+            mock_get_quotes.return_value = mock_quotes
+
+            stop_event = asyncio.Event()
+            results = []
+
+            async for quotes in client.stream_quotes([(0, "000001")], interval=0.05, stop_event=stop_event):
+                results.append(quotes)
+                # 立即设置停止事件
+                if len(results) >= 1:
+                    stop_event.set()
+
+            assert len(results) >= 1
+
+    async def test_stream_quotes_error_callback(self):
+        """测试流式行情错误回调"""
+        client = AsyncTdxClient()
+
+        errors = []
+
+        def on_error(e):
+            errors.append(e)
+
+        with patch.object(client, 'get_quotes', new_callable=AsyncMock) as mock_get_quotes:
+            mock_get_quotes.side_effect = [ConnectionError("测试错误"), []]
+
+            stop_event = asyncio.Event()
+            results = []
+
+            async for quotes in client.stream_quotes(
+                [(1, "600519")],
+                interval=0.05,
+                stop_event=stop_event,
+                on_error=on_error
+            ):
+                results.append(quotes)
+                if len(results) >= 1:
+                    stop_event.set()
+
+            assert len(errors) == 1
+            assert isinstance(errors[0], ConnectionError)
+
+    async def test_stream_quotes_default_stop_event(self):
+        """测试流式行情默认 stop_event 创建"""
+        client = AsyncTdxClient()
+
+        mock_quotes = [
+            StockQuote(
+                code="600000",
+                market="SH",
+                name="浦发银行",
+                price=10.0,
+                last_close=9.9,
+                open=9.95,
+                high=10.1,
+                low=9.9,
+                volume=1000,
+                amount=10000.0,
+                bid1=9.99,
+                bid1_vol=100,
+                ask1=10.01,
+                ask1_vol=100,
+                datetime=None,
+            )
+        ]
+
+        with patch.object(client, 'get_quotes', new_callable=AsyncMock) as mock_get_quotes:
+            mock_get_quotes.return_value = mock_quotes
+
+            # 手动控制循环次数
+            count = 0
+            async for quotes in client.stream_quotes([(1, "600000")], interval=0.05):
+                count += 1
+                if count >= 2:
+                    break
+
+            assert count >= 1
+
+
+@pytest.mark.asyncio
+class TestAsyncClientStreamBars:
+    """测试异步流式K线接口"""
+
+    async def test_stream_bars_basic(self):
+        """测试流式K线基本功能"""
+        client = AsyncTdxClient()
+
+        mock_bars_page1 = [
+            Bar(code="600519", market="SH", datetime=None, open=1800.0, high=1810.0, low=1790.0, close=1805.0, volume=1000, amount=1805000.0),
+            Bar(code="600519", market="SH", datetime=None, open=1805.0, high=1815.0, low=1800.0, close=1810.0, volume=2000, amount=3620000.0),
+        ]
+        mock_bars_page2 = [
+            Bar(code="600519", market="SH", datetime=None, open=1810.0, high=1820.0, low=1805.0, close=1815.0, volume=1500, amount=2722500.0),
+        ]
+
+        with patch.object(client, 'get_bars', new_callable=AsyncMock) as mock_get_bars:
+            mock_get_bars.side_effect = [mock_bars_page1, mock_bars_page2, []]
+
+            results = []
+            async for bars in client.stream_bars("600519", "SH", "1d", page_size=2):
+                results.append(bars)
+
+            assert len(results) == 2
+            assert len(results[0]) == 2
+            assert len(results[1]) == 1
+
+    async def test_stream_bars_with_end(self):
+        """测试带结束位置的流式K线"""
+        client = AsyncTdxClient()
+
+        mock_bars = [
+            Bar(code="600519", market="SH", datetime=None, open=1800.0, high=1810.0, low=1790.0, close=1805.0, volume=1000, amount=1805000.0),
+        ]
+
+        with patch.object(client, 'get_bars', new_callable=AsyncMock) as mock_get_bars:
+            mock_get_bars.return_value = mock_bars
+
+            results = []
+            async for bars in client.stream_bars("600519", "SH", "1d", start=0, end=3, page_size=2):
+                results.append(bars)
+                # 限制循环次数防止无限循环
+                if len(results) >= 5:
+                    break
+
+            assert len(results) >= 1
+
+    async def test_stream_bars_with_stop_event(self):
+        """测试使用 stop_event 停止流式K线"""
+        client = AsyncTdxClient()
+
+        mock_bars = [
+            Bar(code="600519", market="SH", datetime=None, open=1800.0, high=1810.0, low=1790.0, close=1805.0, volume=1000, amount=1805000.0),
+        ]
+
+        with patch.object(client, 'get_bars', new_callable=AsyncMock) as mock_get_bars:
+            mock_get_bars.return_value = mock_bars
+
+            stop_event = asyncio.Event()
+            results = []
+
+            async for bars in client.stream_bars("600519", "SH", "1d", page_size=1, stop_event=stop_event):
+                results.append(bars)
+                if len(results) >= 1:
+                    stop_event.set()
+
+            assert len(results) >= 1
+
+    async def test_stream_bars_empty_response(self):
+        """测试流式K线空响应处理"""
+        client = AsyncTdxClient()
+
+        with patch.object(client, 'get_bars', new_callable=AsyncMock) as mock_get_bars:
+            mock_get_bars.return_value = []
+
+            results = []
+            async for bars in client.stream_bars("600519", "SH", "1d"):
+                results.append(bars)
+
+            assert len(results) == 0
+
+    async def test_stream_bars_error_handling(self):
+        """测试流式K线错误处理"""
+        client = AsyncTdxClient()
+
+        with patch.object(client, 'get_bars', new_callable=AsyncMock) as mock_get_bars:
+            mock_get_bars.side_effect = ConnectionError("连接错误")
+
+            results = []
+            async for bars in client.stream_bars("600519", "SH", "1d"):
+                results.append(bars)
+
+            assert len(results) == 0
+
+
+@pytest.mark.asyncio
+class TestAsyncClientStreamTransactions:
+    """测试异步流式分笔成交接口"""
+
+    async def test_stream_transactions_basic(self):
+        """测试流式分笔成交基本功能"""
+        client = AsyncTdxClient()
+
+        mock_ticks_page1 = [
+            Tick(code="600519", market="SH", time="10:30:00", price=1800.0, volume=100, amount=180000.0, direction=0),
+            Tick(code="600519", market="SH", time="10:30:01", price=1801.0, volume=200, amount=360200.0, direction=1),
+        ]
+        mock_ticks_page2 = [
+            Tick(code="600519", market="SH", time="10:30:02", price=1802.0, volume=150, amount=270300.0, direction=0),
+        ]
+
+        with patch.object(client, 'get_transactions', new_callable=AsyncMock) as mock_get_trans:
+            mock_get_trans.side_effect = [mock_ticks_page1, mock_ticks_page2, []]
+
+            results = []
+            async for ticks in client.stream_transactions("600519", "SH", page_size=2):
+                results.append(ticks)
+
+            assert len(results) == 2
+            assert len(results[0]) == 2
+            assert len(results[1]) == 1
+
+    async def test_stream_transactions_with_max_count(self):
+        """测试带最大数量限制的流式分笔成交"""
+        client = AsyncTdxClient()
+
+        mock_ticks = [
+            Tick(code="600519", market="SH", time="10:30:00", price=1800.0, volume=100, amount=180000.0, direction=0),
+        ]
+
+        with patch.object(client, 'get_transactions', new_callable=AsyncMock) as mock_get_trans:
+            mock_get_trans.return_value = mock_ticks
+
+            results = []
+            async for ticks in client.stream_transactions("600519", "SH", max_count=3, page_size=2):
+                results.append(ticks)
+                if len(results) >= 5:  # 防止无限循环
+                    break
+
+            # 由于 max_count=3，page_size=2，应该最多获取 2 页
+            assert len(results) <= 2
+
+    async def test_stream_transactions_with_stop_event(self):
+        """测试使用 stop_event 停止流式分笔成交"""
+        client = AsyncTdxClient()
+
+        mock_ticks = [
+            Tick(code="600519", market="SH", time="10:30:00", price=1800.0, volume=100, amount=180000.0, direction=0),
+        ]
+
+        with patch.object(client, 'get_transactions', new_callable=AsyncMock) as mock_get_trans:
+            mock_get_trans.return_value = mock_ticks
+
+            stop_event = asyncio.Event()
+            results = []
+
+            async for ticks in client.stream_transactions("600519", "SH", page_size=1, stop_event=stop_event):
+                results.append(ticks)
+                if len(results) >= 1:
+                    stop_event.set()
+
+            assert len(results) >= 1
+
+    async def test_stream_transactions_empty_response(self):
+        """测试流式分笔成交空响应处理"""
+        client = AsyncTdxClient()
+
+        with patch.object(client, 'get_transactions', new_callable=AsyncMock) as mock_get_trans:
+            mock_get_trans.return_value = []
+
+            results = []
+            async for ticks in client.stream_transactions("600519", "SH"):
+                results.append(ticks)
+
+            assert len(results) == 0

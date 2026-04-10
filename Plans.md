@@ -1,66 +1,147 @@
-# TDXAPI PyPI 发布计划
+# TDXDataFetcher 扩展计划
 
 创建日期: 2026-04-10
 
 ---
 
-## Phase 1: 发布前准备
+## 项目现状
+
+TDXDataFetcher (ten2net-tdxapi) 是一个通达信行情数据直连库，已实现：
+- 实时行情、K线、分时、分笔数据
+- 股票列表、财务数据、除权除息
+- 公司信息、板块信息
+- 期货行情支持
+
+---
+
+## Phase 1: 数据存储与缓存
 
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
-| 1.1 | 注册 PyPI 账户并获取 API Token | 在 https://pypi.org/manage/account/token/ 创建 token，权限 scope 为 "Entire account" 或指定项目 | - | cc:TODO |
-| 1.2 | 配置 GitHub Secrets | 在仓库 Settings > Secrets and variables > Actions 中添加 `PYPI_API_TOKEN` | 1.1 | cc:TODO |
-| 1.3 | 完善 pyproject.toml 元数据 | 添加 author、license、keywords、classifiers、project urls 等必要字段 | - | cc:完了 |
-| 1.4 | 添加 LICENSE 文件 | 选择合适许可证（建议 MIT 或 Apache-2.0），创建 LICENSE 文件 | - | cc:完了 |
-| 1.5 | 完善 README.md | 确保包含安装说明、基本用法、支持的 Python 版本 | - | cc:完了 |
+| 1.1 | SQLite 本地缓存 | 实现 `TdxCache` 类，支持K线/分笔数据本地存储 | - | cc:完工 |
+| 1.2 | Parquet 格式导出 | 实现 `to_parquet()` 方法，支持Pandas DataFrame导出 | 1.1 | cc:完工 |
+| 1.3 | CSV/Excel 导出 | 实现 `to_csv()`, `to_excel()` 方法 | 1.1 | cc:完工 |
+| 1.4 | 智能缓存策略 | 实现LRU缓存、过期时间、增量更新机制 | 1.1 | cc:完工 |
+| 1.5 | 数据压缩存储 | 对历史数据使用zlib/lz4压缩存储 | 1.1 | cc:完工 |
 
-## Phase 2: GitHub Actions 配置
+---
 
-| Task | 内容 | DoD | Depends | Status |
-|------|------|-----|---------|--------|
-| 2.1 | 创建发布工作流 | 创建 `.github/workflows/publish.yml`，支持手动触发 (workflow_dispatch) 和 tag 推送自动触发 | 1.2 | cc:完了 |
-| 2.2 | 配置测试工作流 | 创建 `.github/workflows/test.yml`，在 PR 和 push 时自动运行测试 | - | cc:完了 |
-| 2.3 | 验证工作流语法 | 使用 GitHub Actions 编辑器或 `act` 工具验证 YAML 语法正确 | 2.1, 2.2 | cc:完了 |
-
-## Phase 3: 测试发布流程
+## Phase 2: 异步API支持
 
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
-| 3.1 | 本地构建测试 | 运行 `python -m build` 和 `twine check dist/*`，确保包可正常构建 | 1.3, 1.4, 1.5 | cc:完了 |
-| 3.2 | 测试 PyPI 发布（可选） | 先发布到 https://test.pypi.org/ 验证流程 | 2.1 | cc:TODO |
-| 3.3 | 创建测试 Tag 并推送 | 创建 `v0.1.0-test` tag，推送到 GitHub，验证 Actions 触发和运行 | 2.1, 2.3 | cc:TODO |
+| 2.1 | AsyncTdxClient 类 | 基于 asyncio 实现异步客户端 | - | cc:完工 |
+| 2.2 | 异步批量请求 | 支持并发获取多只股票数据 | 2.1 | cc:完工 |
+| 2.3 | 异步流式接口 | 实现 async generator 返回实时数据流 | 2.1 | cc:完工 |
+| 2.4 | 连接池管理 | 支持多连接并发，连接复用 | 2.1 | cc:完工 |
 
-## Phase 4: 正式发布
+---
+
+## Phase 3: 实时数据订阅
 
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
-| 4.1 | 确定版本号 | 更新 `pyproject.toml` 和 `__init__.py` 中的版本号为正式版本（如 0.1.0） | 3.3 | cc:完了 [797efd5] |
-| 4.2 | 创建正式 Release | 在 GitHub 创建 Release，填写 changelog，系统自动发布到 PyPI | 4.1 | cc:WIP |
-| 4.3 | 验证 PyPI 发布 | 访问 https://pypi.org/project/tdxapi/ 确认包已发布，可正常 `pip install` | 4.2 | cc:TODO |
-| 4.4 | 在其他项目中测试安装 | 创建干净的虚拟环境，运行 `pip install tdxapi` 并验证功能正常 | 4.3 | cc:TODO |
+| 3.1 | 轮询订阅模式 | 实现 `subscribe_quotes()` 定时轮询 | - | cc:完工 |
+| 3.2 | 回调接口设计 | 支持注册回调函数处理数据更新 | 3.1 | cc:完工 |
+| 3.3 | 变化检测机制 | 只在价格变动时触发回调 | 3.1 | cc:完工 |
+| 3.4 | 多股票订阅管理 | 支持同时订阅多只股票，统一调度 | 3.1 | cc:完工 |
+
+---
+
+## Phase 4: 技术指标计算
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 4.1 | 移动平均线 (MA) | 实现 MA5/10/20/60/120/250 | - | cc:完工 |
+| 4.2 | MACD 指标 | 实现 DIF/DEA/MACD 计算 | 4.1 | cc:完工 |
+| 4.3 | KDJ 指标 | 实现 K/D/J 值计算 | 4.1 | cc:完工 |
+| 4.4 | RSI 指标 | 实现 RSI6/12/24 计算 | 4.1 | cc:完工 |
+| 4.5 | 布林带 (BOLL) | 实现上轨/中轨/下轨计算 | 4.1 | cc:完工 |
+| 4.6 | 成交量指标 | 实现 VOL、OBV 计算 | - | cc:完工 |
+| 4.7 | 指标组合输出 | 返回包含所有指标的 DataFrame | 4.1-4.6 | cc:完工 |
+
+---
+
+## Phase 5: 批量数据下载
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 5.1 | 全市场股票列表 | 自动获取全部A股代码 | - | cc:完工 |
+| 5.2 | 历史K线批量下载 | 支持按日期范围批量下载 | 1.1, 5.1 | cc:完工 |
+| 5.3 | 分笔数据批量下载 | 支持多日分笔数据下载 | 1.1, 5.1 | cc:完工 |
+| 5.4 | 下载进度显示 | 实现 tqdm 进度条 | 5.2, 5.3 | cc:完工 |
+| 5.5 | 断点续传机制 | 支持中断后恢复下载 | 5.2, 5.3 | cc:完工 |
+
+---
+
+## Phase 6: 数据质量与工具
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 6.1 | 数据校验工具 | 检查价格/成交量异常值 | - | cc:完工 |
+| 6.2 | 缺失数据检测 | 识别并补全缺失的K线数据 | 6.1 | cc:完工 |
+| 6.3 | 除权除息复权 | 实现前复权/后复权计算 | 6.1 | cc:完工 |
+| 6.4 | 数据对齐工具 | 多股票数据时间对齐 | 6.1 | cc:完工 |
+
+---
+
+## Phase 7: 高级功能
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 7.1 | Pandas 集成 | 返回 DataFrame 格式数据 | - | cc:完工 |
+| 7.2 | Polars 支持 | 支持 Polars DataFrame 导出 | 7.1 | cc:完工 |
+| 7.3 | 股票筛选器 | 基于财务/技术指标筛选股票 | 4.7, 6.1 | cc:完工 |
+| 7.4 | 告警系统 | 价格突破/指标金叉死叉告警 | 3.2, 4.7 | cc:完工 |
+
+---
+
+## 优先级矩阵
+
+| 优先级 | 功能 | 价值 | 复杂度 |
+|--------|------|------|--------|
+| P0 | SQLite缓存 | 高 | 低 |
+| P0 | 异步API | 高 | 中 |
+| P1 | 技术指标 | 高 | 中 |
+| P1 | 批量下载 | 高 | 中 |
+| P2 | 实时订阅 | 中 | 中 |
+| P2 | Pandas集成 | 中 | 低 |
+| P3 | 复权计算 | 中 | 高 |
+| P3 | 告警系统 | 低 | 高 |
 
 ---
 
 ## 参考命令
 
 ```bash
-# 本地构建测试
-python -m pip install build twine
-python -m build
-twine check dist/*
+# 安装开发依赖
+pip install -e ".[dev,all]"
 
-# 手动测试发布到 TestPyPI
-python -m twine upload --repository testpypi dist/*
+# 运行测试
+pytest tests/ -v
 
-# Tag 操作
-git tag v0.1.0
-git push origin v0.1.0
+# 类型检查
+mypy src/tdxapi/
+
+# 代码格式化
+black src/ tests/
+isort src/ tests/
 ```
 
-## 注意事项
+## 设计原则
 
-1. **版本号管理**: 使用语义化版本 (SemVer)，格式为 `MAJOR.MINOR.PATCH`
-2. **GitHub Actions 触发条件**: 
-   - 推荐：推送 `v*` 标签时自动触发
-   - 备选：手动触发 workflow_dispatch
-3. **PyPI Token 权限**: 建议创建 project-specific token 而非全局 token
+1. **向后兼容**: 所有新功能不破坏现有API
+2. **可选依赖**: 高级功能使用 optional dependencies
+3. **性能优先**: 批量操作使用批量协议请求
+4. **类型安全**: 全代码类型注解
+
+---
+
+## Phase 8: 代码质量改进（审查后）
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 8.1 | 修复测试警告 | 修复3个测试警告（coroutine未await、asyncio mark误用） | - | cc:完工 |
+| 8.2 | 清理未使用导入 | 清理所有模块和测试文件中的未使用导入 | - | cc:完工 |
+| 8.3 | 更新README文档 | 更新README，展示Phase 1-7的新功能 | - | cc:完工 |
+

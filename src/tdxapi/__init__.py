@@ -1,6 +1,79 @@
+from tdxapi.cache import TdxCache
 from tdxapi.network.client import TdxClient
+from tdxapi.async_client import AsyncTdxClient, BatchResult
+from tdxapi.connection_pool import TdxConnectionPool, PooledClient, PoolStats
 from tdxapi.models import StockQuote, Bar, Tick
 from tdxapi.protocol.constants import Market
+from tdxapi.subscription import (
+    QuoteSubscription,
+    MultiQuoteSubscription,
+    SubscriptionConfig,
+    SubscriptionStats,
+)
+from tdxapi.bulk_download import (
+    BulkDownloader,
+    DownloadProgress,
+    DateRangeHelper,
+    download_all_stocks_bars,
+)
+from tdxapi.advanced import (
+    # DataFrame conversion
+    DataFrameConverter,
+    # Screener
+    FilterOperator,
+    FilterCondition,
+    ScreenerRule,
+    StockScreener,
+    # Alert system
+    AlertType,
+    Alert,
+    AlertResult,
+    AlertSystem,
+    # Helper functions
+    create_price_alert,
+    create_ma_cross_alert,
+    create_macd_cross_alert,
+    create_kdj_cross_alert,
+    detect_cross,
+)
 
 __version__ = "0.1.0"
-__all__ = ["TdxClient", "StockQuote", "Bar", "Tick", "Market"]
+__all__ = [
+    "TdxClient",
+    "AsyncTdxClient",
+    "BatchResult",
+    "TdxCache",
+    "TdxConnectionPool",
+    "PooledClient",
+    "PoolStats",
+    "StockQuote",
+    "Bar",
+    "Tick",
+    "Market",
+    "QuoteSubscription",
+    "MultiQuoteSubscription",
+    "SubscriptionConfig",
+    "SubscriptionStats",
+    "BulkDownloader",
+    "DownloadProgress",
+    "DateRangeHelper",
+    "download_all_stocks_bars",
+    # Advanced features
+    "DataFrameConverter",
+    "FilterOperator",
+    "FilterCondition",
+    "ScreenerRule",
+    "StockScreener",
+    "AlertType",
+    "Alert",
+    "AlertResult",
+    "AlertSystem",
+    "create_price_alert",
+    "create_ma_cross_alert",
+    "create_macd_cross_alert",
+    "create_kdj_cross_alert",
+    "detect_cross",
+]
+
+# Export functions loaded on demand
+# from tdxapi.export import to_dataframe, to_parquet, to_csv, to_excel, read_parquet
