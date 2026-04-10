@@ -18,11 +18,11 @@ TDXDataFetcher (ten2net-tdxapi) 是一个通达信行情数据直连库，已实
 
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
-| 1.1 | SQLite 本地缓存 | 实现 `TdxCache` 类，支持K线/分笔数据本地存储 | - | cc:WIP |
-| 1.2 | Parquet 格式导出 | 实现 `to_parquet()` 方法，支持Pandas DataFrame导出 | 1.1 | cc:TODO |
-| 1.3 | CSV/Excel 导出 | 实现 `to_csv()`, `to_excel()` 方法 | 1.1 | cc:TODO |
-| 1.4 | 智能缓存策略 | 实现LRU缓存、过期时间、增量更新机制 | 1.1 | cc:TODO |
-| 1.5 | 数据压缩存储 | 对历史数据使用zlib/lz4压缩存储 | 1.1 | cc:TODO |
+| 1.1 | SQLite 本地缓存 | 实现 `TdxCache` 类，支持K线/分笔数据本地存储 | - | cc:完了 |
+| 1.2 | Parquet 格式导出 | 实现 `to_parquet()` 方法，支持Pandas DataFrame导出 | 1.1 | cc:WIP |
+| 1.3 | CSV/Excel 导出 | 实现 `to_csv()`, `to_excel()` 方法 | 1.1 | cc:完了 |
+| 1.4 | 智能缓存策略 | 实现LRU缓存、过期时间、增量更新机制 | 1.1 | cc:WIP |
+| 1.5 | 数据压缩存储 | 对历史数据使用zlib/lz4压缩存储 | 1.1 | cc:WIP |
 
 ---
 
