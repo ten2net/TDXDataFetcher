@@ -89,10 +89,10 @@ TDXDataFetcher (ten2net-tdxapi) 是一个通达信行情数据直连库，已实
 
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
-| 7.1 | Pandas 集成 | 返回 DataFrame 格式数据 | - | cc:TODO |
-| 7.2 | Polars 支持 | 支持 Polars DataFrame 导出 | 7.1 | cc:TODO |
-| 7.3 | 股票筛选器 | 基于财务/技术指标筛选股票 | 4.7, 6.1 | cc:TODO |
-| 7.4 | 告警系统 | 价格突破/指标金叉死叉告警 | 3.2, 4.7 | cc:TODO |
+| 7.1 | Pandas 集成 | 返回 DataFrame 格式数据 | - | cc:完工 |
+| 7.2 | Polars 支持 | 支持 Polars DataFrame 导出 | 7.1 | cc:完工 |
+| 7.3 | 股票筛选器 | 基于财务/技术指标筛选股票 | 4.7, 6.1 | cc:完工 |
+| 7.4 | 告警系统 | 价格突破/指标金叉死叉告警 | 3.2, 4.7 | cc:完工 |
 
 ---
 

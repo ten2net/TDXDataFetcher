@@ -16,6 +16,26 @@ from tdxapi.bulk_download import (
     DateRangeHelper,
     download_all_stocks_bars,
 )
+from tdxapi.advanced import (
+    # DataFrame conversion
+    DataFrameConverter,
+    # Screener
+    FilterOperator,
+    FilterCondition,
+    ScreenerRule,
+    StockScreener,
+    # Alert system
+    AlertType,
+    Alert,
+    AlertResult,
+    AlertSystem,
+    # Helper functions
+    create_price_alert,
+    create_ma_cross_alert,
+    create_macd_cross_alert,
+    create_kdj_cross_alert,
+    detect_cross,
+)
 
 __version__ = "0.1.0"
 __all__ = [
@@ -38,7 +58,22 @@ __all__ = [
     "DownloadProgress",
     "DateRangeHelper",
     "download_all_stocks_bars",
+    # Advanced features
+    "DataFrameConverter",
+    "FilterOperator",
+    "FilterCondition",
+    "ScreenerRule",
+    "StockScreener",
+    "AlertType",
+    "Alert",
+    "AlertResult",
+    "AlertSystem",
+    "create_price_alert",
+    "create_ma_cross_alert",
+    "create_macd_cross_alert",
+    "create_kdj_cross_alert",
+    "detect_cross",
 ]
 
-# 导出功能在导入时按需加载
+# Export functions loaded on demand
 # from tdxapi.export import to_dataframe, to_parquet, to_csv, to_excel, read_parquet
