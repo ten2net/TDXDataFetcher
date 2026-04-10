@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/pytdx2/
+      url: https://pypi.org/project/ten2net-tdxapi/
     permissions:
       id-token: write  # 用于 OIDC 发布
 
