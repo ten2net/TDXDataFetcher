@@ -936,3 +936,325 @@ class TestBatchResult:
         assert result.total == 0
         assert result.success_count == 0
         assert result.failed_count == 0
+
+
+@pytest.mark.asyncio
+class TestAsyncClientStreamQuotes:
+    """测试异步流式行情接口"""
+
+    async def test_stream_quotes_basic(self):
+        """测试流式行情基本功能"""
+        client = AsyncTdxClient()
+
+        mock_quotes = [
+            StockQuote(
+                code="600519",
+                market="SH",
+                name="贵州茅台",
+                price=1800.0,
+                last_close=1790.0,
+                open=1795.0,
+                high=1810.0,
+                low=1785.0,
+                volume=10000,
+                amount=18000000.0,
+                bid1=1799.0,
+                bid1_vol=100,
+                ask1=1801.0,
+                ask1_vol=100,
+                datetime=None,
+            )
+        ]
+
+        with patch.object(client, 'get_quotes', new_callable=AsyncMock) as mock_get_quotes:
+            mock_get_quotes.return_value = mock_quotes
+
+            stop_event = asyncio.Event()
+            results = []
+
+            async for quotes in client.stream_quotes([(1, "600519")], interval=0.1, stop_event=stop_event):
+                results.append(quotes)
+                if len(results) >= 2:
+                    stop_event.set()
+
+            assert len(results) >= 1
+            assert results[0][0].code == "600519"
+
+    async def test_stream_quotes_with_stop_event(self):
+        """测试使用 stop_event 停止流式接口"""
+        client = AsyncTdxClient()
+
+        mock_quotes = [
+            StockQuote(
+                code="000001",
+                market="SZ",
+                name="平安银行",
+                price=12.5,
+                last_close=12.3,
+                open=12.4,
+                high=12.6,
+                low=12.2,
+                volume=50000,
+                amount=625000.0,
+                bid1=12.4,
+                bid1_vol=200,
+                ask1=12.6,
+                ask1_vol=200,
+                datetime=None,
+            )
+        ]
+
+        with patch.object(client, 'get_quotes', new_callable=AsyncMock) as mock_get_quotes:
+            mock_get_quotes.return_value = mock_quotes
+
+            stop_event = asyncio.Event()
+            results = []
+
+            async for quotes in client.stream_quotes([(0, "000001")], interval=0.05, stop_event=stop_event):
+                results.append(quotes)
+                # 立即设置停止事件
+                if len(results) >= 1:
+                    stop_event.set()
+
+            assert len(results) >= 1
+
+    async def test_stream_quotes_error_callback(self):
+        """测试流式行情错误回调"""
+        client = AsyncTdxClient()
+
+        errors = []
+
+        def on_error(e):
+            errors.append(e)
+
+        with patch.object(client, 'get_quotes', new_callable=AsyncMock) as mock_get_quotes:
+            mock_get_quotes.side_effect = [ConnectionError("测试错误"), []]
+
+            stop_event = asyncio.Event()
+            results = []
+
+            async for quotes in client.stream_quotes(
+                [(1, "600519")],
+                interval=0.05,
+                stop_event=stop_event,
+                on_error=on_error
+            ):
+                results.append(quotes)
+                if len(results) >= 1:
+                    stop_event.set()
+
+            assert len(errors) == 1
+            assert isinstance(errors[0], ConnectionError)
+
+    async def test_stream_quotes_default_stop_event(self):
+        """测试流式行情默认 stop_event 创建"""
+        client = AsyncTdxClient()
+
+        mock_quotes = [
+            StockQuote(
+                code="600000",
+                market="SH",
+                name="浦发银行",
+                price=10.0,
+                last_close=9.9,
+                open=9.95,
+                high=10.1,
+                low=9.9,
+                volume=1000,
+                amount=10000.0,
+                bid1=9.99,
+                bid1_vol=100,
+                ask1=10.01,
+                ask1_vol=100,
+                datetime=None,
+            )
+        ]
+
+        with patch.object(client, 'get_quotes', new_callable=AsyncMock) as mock_get_quotes:
+            mock_get_quotes.return_value = mock_quotes
+
+            # 手动控制循环次数
+            count = 0
+            async for quotes in client.stream_quotes([(1, "600000")], interval=0.05):
+                count += 1
+                if count >= 2:
+                    break
+
+            assert count >= 1
+
+
+@pytest.mark.asyncio
+class TestAsyncClientStreamBars:
+    """测试异步流式K线接口"""
+
+    async def test_stream_bars_basic(self):
+        """测试流式K线基本功能"""
+        client = AsyncTdxClient()
+
+        mock_bars_page1 = [
+            Bar(code="600519", market="SH", datetime=None, open=1800.0, high=1810.0, low=1790.0, close=1805.0, volume=1000, amount=1805000.0),
+            Bar(code="600519", market="SH", datetime=None, open=1805.0, high=1815.0, low=1800.0, close=1810.0, volume=2000, amount=3620000.0),
+        ]
+        mock_bars_page2 = [
+            Bar(code="600519", market="SH", datetime=None, open=1810.0, high=1820.0, low=1805.0, close=1815.0, volume=1500, amount=2722500.0),
+        ]
+
+        with patch.object(client, 'get_bars', new_callable=AsyncMock) as mock_get_bars:
+            mock_get_bars.side_effect = [mock_bars_page1, mock_bars_page2, []]
+
+            results = []
+            async for bars in client.stream_bars("600519", "SH", "1d", page_size=2):
+                results.append(bars)
+
+            assert len(results) == 2
+            assert len(results[0]) == 2
+            assert len(results[1]) == 1
+
+    async def test_stream_bars_with_end(self):
+        """测试带结束位置的流式K线"""
+        client = AsyncTdxClient()
+
+        mock_bars = [
+            Bar(code="600519", market="SH", datetime=None, open=1800.0, high=1810.0, low=1790.0, close=1805.0, volume=1000, amount=1805000.0),
+        ]
+
+        with patch.object(client, 'get_bars', new_callable=AsyncMock) as mock_get_bars:
+            mock_get_bars.return_value = mock_bars
+
+            results = []
+            async for bars in client.stream_bars("600519", "SH", "1d", start=0, end=3, page_size=2):
+                results.append(bars)
+                # 限制循环次数防止无限循环
+                if len(results) >= 5:
+                    break
+
+            assert len(results) >= 1
+
+    async def test_stream_bars_with_stop_event(self):
+        """测试使用 stop_event 停止流式K线"""
+        client = AsyncTdxClient()
+
+        mock_bars = [
+            Bar(code="600519", market="SH", datetime=None, open=1800.0, high=1810.0, low=1790.0, close=1805.0, volume=1000, amount=1805000.0),
+        ]
+
+        with patch.object(client, 'get_bars', new_callable=AsyncMock) as mock_get_bars:
+            mock_get_bars.return_value = mock_bars
+
+            stop_event = asyncio.Event()
+            results = []
+
+            async for bars in client.stream_bars("600519", "SH", "1d", page_size=1, stop_event=stop_event):
+                results.append(bars)
+                if len(results) >= 1:
+                    stop_event.set()
+
+            assert len(results) >= 1
+
+    async def test_stream_bars_empty_response(self):
+        """测试流式K线空响应处理"""
+        client = AsyncTdxClient()
+
+        with patch.object(client, 'get_bars', new_callable=AsyncMock) as mock_get_bars:
+            mock_get_bars.return_value = []
+
+            results = []
+            async for bars in client.stream_bars("600519", "SH", "1d"):
+                results.append(bars)
+
+            assert len(results) == 0
+
+    async def test_stream_bars_error_handling(self):
+        """测试流式K线错误处理"""
+        client = AsyncTdxClient()
+
+        with patch.object(client, 'get_bars', new_callable=AsyncMock) as mock_get_bars:
+            mock_get_bars.side_effect = ConnectionError("连接错误")
+
+            results = []
+            async for bars in client.stream_bars("600519", "SH", "1d"):
+                results.append(bars)
+
+            assert len(results) == 0
+
+
+@pytest.mark.asyncio
+class TestAsyncClientStreamTransactions:
+    """测试异步流式分笔成交接口"""
+
+    async def test_stream_transactions_basic(self):
+        """测试流式分笔成交基本功能"""
+        client = AsyncTdxClient()
+
+        mock_ticks_page1 = [
+            Tick(code="600519", market="SH", time="10:30:00", price=1800.0, volume=100, amount=180000.0, direction=0),
+            Tick(code="600519", market="SH", time="10:30:01", price=1801.0, volume=200, amount=360200.0, direction=1),
+        ]
+        mock_ticks_page2 = [
+            Tick(code="600519", market="SH", time="10:30:02", price=1802.0, volume=150, amount=270300.0, direction=0),
+        ]
+
+        with patch.object(client, 'get_transactions', new_callable=AsyncMock) as mock_get_trans:
+            mock_get_trans.side_effect = [mock_ticks_page1, mock_ticks_page2, []]
+
+            results = []
+            async for ticks in client.stream_transactions("600519", "SH", page_size=2):
+                results.append(ticks)
+
+            assert len(results) == 2
+            assert len(results[0]) == 2
+            assert len(results[1]) == 1
+
+    async def test_stream_transactions_with_max_count(self):
+        """测试带最大数量限制的流式分笔成交"""
+        client = AsyncTdxClient()
+
+        mock_ticks = [
+            Tick(code="600519", market="SH", time="10:30:00", price=1800.0, volume=100, amount=180000.0, direction=0),
+        ]
+
+        with patch.object(client, 'get_transactions', new_callable=AsyncMock) as mock_get_trans:
+            mock_get_trans.return_value = mock_ticks
+
+            results = []
+            async for ticks in client.stream_transactions("600519", "SH", max_count=3, page_size=2):
+                results.append(ticks)
+                if len(results) >= 5:  # 防止无限循环
+                    break
+
+            # 由于 max_count=3，page_size=2，应该最多获取 2 页
+            assert len(results) <= 2
+
+    async def test_stream_transactions_with_stop_event(self):
+        """测试使用 stop_event 停止流式分笔成交"""
+        client = AsyncTdxClient()
+
+        mock_ticks = [
+            Tick(code="600519", market="SH", time="10:30:00", price=1800.0, volume=100, amount=180000.0, direction=0),
+        ]
+
+        with patch.object(client, 'get_transactions', new_callable=AsyncMock) as mock_get_trans:
+            mock_get_trans.return_value = mock_ticks
+
+            stop_event = asyncio.Event()
+            results = []
+
+            async for ticks in client.stream_transactions("600519", "SH", page_size=1, stop_event=stop_event):
+                results.append(ticks)
+                if len(results) >= 1:
+                    stop_event.set()
+
+            assert len(results) >= 1
+
+    async def test_stream_transactions_empty_response(self):
+        """测试流式分笔成交空响应处理"""
+        client = AsyncTdxClient()
+
+        with patch.object(client, 'get_transactions', new_callable=AsyncMock) as mock_get_trans:
+            mock_get_trans.return_value = []
+
+            results = []
+            async for ticks in client.stream_transactions("600519", "SH"):
+                results.append(ticks)
+
+            assert len(results) == 0
