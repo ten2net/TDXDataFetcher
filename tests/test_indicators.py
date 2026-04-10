@@ -5,7 +5,10 @@
 import unittest
 from datetime import datetime
 from tdxapi.models import Bar
-from tdxapi.indicators import vol, obv, vol_ma
+from tdxapi.indicators import (
+    vol, obv, vol_ma,
+    ma, ema, wma, MA, calculate_all_ma
+)
 
 
 class TestVol(unittest.TestCase):
@@ -177,6 +180,256 @@ class TestVolMA(unittest.TestCase):
         result = vol_ma(single_bar, 3)
         self.assertEqual(len(result), 1)
         self.assertIsNone(result[0])
+
+
+class TestMAFunction(unittest.TestCase):
+    """测试 ma() 函数 - 简单移动平均线"""
+
+    def test_ma_basic(self):
+        """测试基本的 MA 计算"""
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0]
+        result = ma(prices, 3)
+        # 前2个为 None，后面是移动平均
+        self.assertIsNone(result[0])
+        self.assertIsNone(result[1])
+        self.assertAlmostEqual(result[2], 11.0)  # (10+11+12)/3
+        self.assertAlmostEqual(result[3], 12.0)  # (11+12+13)/3
+        self.assertAlmostEqual(result[4], 13.0)  # (12+13+14)/3
+
+    def test_ma_with_bars(self):
+        """测试使用 Bar 列表计算 MA"""
+        bars = [
+            Bar("000001", "SZ", datetime(2024, 1, i+1), 10.0+i, 11.0+i, 9.0+i, 10.5+i, 1000, 10000.0)
+            for i in range(5)
+        ]
+        result = ma(bars, 3, "close")
+        self.assertIsNone(result[0])
+        self.assertIsNone(result[1])
+        # (10.5 + 11.5 + 12.5) / 3 = 34.5 / 3 = 11.5
+        self.assertAlmostEqual(result[2], 11.5)
+
+    def test_ma_different_price_types(self):
+        """测试不同的价格类型"""
+        bars = [
+            Bar("000001", "SZ", datetime(2024, 1, 1), 10.0, 12.0, 8.0, 11.0, 1000, 10000.0),
+            Bar("000001", "SZ", datetime(2024, 1, 2), 11.0, 13.0, 9.0, 12.0, 1000, 10000.0),
+            Bar("000001", "SZ", datetime(2024, 1, 3), 12.0, 14.0, 10.0, 13.0, 1000, 10000.0),
+        ]
+
+        ma_open = ma(bars, 2, "open")
+        self.assertAlmostEqual(ma_open[1], 10.5)  # (10+11)/2
+
+        ma_high = ma(bars, 2, "high")
+        self.assertAlmostEqual(ma_high[1], 12.5)  # (12+13)/2
+
+        ma_low = ma(bars, 2, "low")
+        self.assertAlmostEqual(ma_low[1], 8.5)  # (8+9)/2
+
+    def test_ma_empty_list(self):
+        """测试空列表"""
+        result = ma([], 5)
+        self.assertEqual(result, [])
+
+    def test_ma_insufficient_data(self):
+        """测试数据不足的情况"""
+        prices = [10.0, 11.0]
+        result = ma(prices, 5)
+        self.assertEqual(result, [None, None])
+
+    def test_ma_invalid_period(self):
+        """测试无效的周期"""
+        with self.assertRaises(ValueError):
+            ma([10.0, 11.0], 0)
+        with self.assertRaises(ValueError):
+            ma([10.0, 11.0], -1)
+
+    def test_ma_period_1(self):
+        """测试周期为1的情况"""
+        prices = [10.0, 11.0, 12.0]
+        result = ma(prices, 1)
+        self.assertEqual(result, [10.0, 11.0, 12.0])
+
+
+class TestEMAFunction(unittest.TestCase):
+    """测试 ema() 函数 - 指数移动平均线"""
+
+    def test_ema_basic(self):
+        """测试基本的 EMA 计算"""
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0]
+        result = ema(prices, 3)
+        # EMA 公式: alpha = 2/(3+1) = 0.5
+        # EMA[0] = 10.0
+        # EMA[1] = 0.5*11 + 0.5*10 = 10.5
+        # EMA[2] = 0.5*12 + 0.5*10.5 = 11.25
+        self.assertAlmostEqual(result[0], 10.0)
+        self.assertAlmostEqual(result[1], 10.5)
+        self.assertAlmostEqual(result[2], 11.25)
+        self.assertAlmostEqual(result[3], 12.125)
+        self.assertAlmostEqual(result[4], 13.0625)
+
+    def test_ema_with_bars(self):
+        """测试使用 Bar 列表计算 EMA"""
+        bars = [
+            Bar("000001", "SZ", datetime(2024, 1, i+1), 10.0+i, 11.0+i, 9.0+i, 10.5+i, 1000, 10000.0)
+            for i in range(5)
+        ]
+        result = ema(bars, 3, "close")
+        self.assertAlmostEqual(result[0], 10.5)
+        self.assertAlmostEqual(result[1], 11.0)
+
+    def test_ema_empty_list(self):
+        """测试空列表"""
+        result = ema([], 5)
+        self.assertEqual(result, [])
+
+    def test_ema_invalid_period(self):
+        """测试无效的周期"""
+        with self.assertRaises(ValueError):
+            ema([10.0, 11.0], 0)
+
+
+class TestWMAFunction(unittest.TestCase):
+    """测试 wma() 函数 - 加权移动平均线"""
+
+    def test_wma_basic(self):
+        """测试基本的 WMA 计算"""
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0]
+        result = wma(prices, 3)
+        # 权重: 1, 2, 3，总和为6
+        # WMA[2] = (10*1 + 11*2 + 12*3) / 6 = 68/6 = 11.333...
+        # WMA[3] = (11*1 + 12*2 + 13*3) / 6 = 74/6 = 12.333...
+        # WMA[4] = (12*1 + 13*2 + 14*3) / 6 = 80/6 = 13.333...
+        self.assertIsNone(result[0])
+        self.assertIsNone(result[1])
+        self.assertAlmostEqual(result[2], 68/6)
+        self.assertAlmostEqual(result[3], 74/6)
+        self.assertAlmostEqual(result[4], 80/6)
+
+    def test_wma_empty_list(self):
+        """测试空列表"""
+        result = wma([], 5)
+        self.assertEqual(result, [])
+
+
+class TestMAClass(unittest.TestCase):
+    """测试 MA 类"""
+
+    def test_ma_class_calculate_sma(self):
+        """测试 MA.calculate() 使用 SMA"""
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0]
+        ma_obj = MA.calculate(prices, 3, "sma")
+        self.assertEqual(ma_obj.period, 3)
+        self.assertEqual(ma_obj.ma_type, "sma")
+        self.assertAlmostEqual(ma_obj.values[2], 11.0)
+
+    def test_ma_class_calculate_ema(self):
+        """测试 MA.calculate() 使用 EMA"""
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0]
+        ma_obj = MA.calculate(prices, 3, "ema")
+        self.assertEqual(ma_obj.period, 3)
+        self.assertEqual(ma_obj.ma_type, "ema")
+        self.assertAlmostEqual(ma_obj.values[0], 10.0)
+
+    def test_ma_class_invalid_type(self):
+        """测试无效的 MA 类型"""
+        with self.assertRaises(ValueError):
+            MA.calculate([10.0, 11.0], 3, "invalid")
+
+    def test_ma_convenience_methods(self):
+        """测试便捷的 MA 计算方法"""
+        prices = list(range(1, 300))  # 1到299
+
+        ma5 = MA.ma5(prices)
+        self.assertEqual(ma5.period, 5)
+
+        ma10 = MA.ma10(prices)
+        self.assertEqual(ma10.period, 10)
+
+        ma20 = MA.ma20(prices)
+        self.assertEqual(ma20.period, 20)
+
+        ma60 = MA.ma60(prices)
+        self.assertEqual(ma60.period, 60)
+
+        ma120 = MA.ma120(prices)
+        self.assertEqual(ma120.period, 120)
+
+        ma250 = MA.ma250(prices)
+        self.assertEqual(ma250.period, 250)
+
+    def test_ma_class_indexing(self):
+        """测试 MA 类的索引访问"""
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0]
+        ma_obj = MA.calculate(prices, 3)
+        self.assertIsNone(ma_obj[0])
+        self.assertAlmostEqual(ma_obj[2], 11.0)
+
+    def test_ma_class_len(self):
+        """测试 MA 类的长度"""
+        prices = [10.0, 11.0, 12.0]
+        ma_obj = MA.calculate(prices, 2)
+        self.assertEqual(len(ma_obj), 3)
+
+    def test_ma_class_last(self):
+        """测试 MA.last() 方法"""
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0]
+        ma_obj = MA.calculate(prices, 3)
+        self.assertAlmostEqual(ma_obj.last(), 13.0)
+
+        # 测试全为 None 的情况
+        ma_obj2 = MA.calculate([10.0], 5)
+        self.assertIsNone(ma_obj2.last())
+
+    def test_ma_class_valid_values(self):
+        """测试 MA.valid_values() 方法"""
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0]
+        ma_obj = MA.calculate(prices, 3)
+        valid = ma_obj.valid_values()
+        self.assertEqual(len(valid), 3)
+        self.assertAlmostEqual(valid[0], 11.0)
+
+    def test_ma_class_repr(self):
+        """测试 MA 类的字符串表示"""
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0]
+        ma_obj = MA.calculate(prices, 3)
+        repr_str = repr(ma_obj)
+        self.assertIn("MA(3", repr_str)
+        self.assertIn("sma", repr_str)
+        self.assertIn("3/5", repr_str)  # 3个有效值，总共5个
+
+
+class TestCalculateAllMA(unittest.TestCase):
+    """测试 calculate_all_ma() 函数"""
+
+    def test_calculate_all_ma_default(self):
+        """测试默认计算所有常用周期"""
+        prices = list(range(1, 300))
+        result = calculate_all_ma(prices)
+
+        self.assertIn(5, result)
+        self.assertIn(10, result)
+        self.assertIn(20, result)
+        self.assertIn(60, result)
+        self.assertIn(120, result)
+        self.assertIn(250, result)
+
+        self.assertIsInstance(result[5], MA)
+
+    def test_calculate_all_ma_custom_periods(self):
+        """测试自定义周期"""
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0]
+        result = calculate_all_ma(prices, periods=[2, 3])
+
+        self.assertIn(2, result)
+        self.assertIn(3, result)
+        self.assertNotIn(5, result)
+
+    def test_calculate_all_ma_ema(self):
+        """测试使用 EMA 类型"""
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0]
+        result = calculate_all_ma(prices, periods=[3], ma_type="ema")
+
+        self.assertEqual(result[3].ma_type, "ema")
 
 
 if __name__ == "__main__":
