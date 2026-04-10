@@ -10,6 +10,12 @@ from tdxapi.subscription import (
     SubscriptionConfig,
     SubscriptionStats,
 )
+from tdxapi.bulk_download import (
+    BulkDownloader,
+    DownloadProgress,
+    DateRangeHelper,
+    download_all_stocks_bars,
+)
 
 __version__ = "0.1.0"
 __all__ = [
@@ -28,6 +34,10 @@ __all__ = [
     "MultiQuoteSubscription",
     "SubscriptionConfig",
     "SubscriptionStats",
+    "BulkDownloader",
+    "DownloadProgress",
+    "DateRangeHelper",
+    "download_all_stocks_bars",
 ]
 
 # 导出功能在导入时按需加载
