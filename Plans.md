@@ -34,8 +34,8 @@
 
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
-| 4.1 | 确定版本号 | 更新 `pyproject.toml` 和 `__init__.py` 中的版本号为正式版本（如 0.1.0） | 3.3 | cc:TODO |
-| 4.2 | 创建正式 Release | 在 GitHub 创建 Release，填写 changelog，系统自动发布到 PyPI | 4.1 | cc:TODO |
+| 4.1 | 确定版本号 | 更新 `pyproject.toml` 和 `__init__.py` 中的版本号为正式版本（如 0.1.0） | 3.3 | cc:完了 [797efd5] |
+| 4.2 | 创建正式 Release | 在 GitHub 创建 Release，填写 changelog，系统自动发布到 PyPI | 4.1 | cc:WIP |
 | 4.3 | 验证 PyPI 发布 | 访问 https://pypi.org/project/tdxapi/ 确认包已发布，可正常 `pip install` | 4.2 | cc:TODO |
 | 4.4 | 在其他项目中测试安装 | 创建干净的虚拟环境，运行 `pip install tdxapi` 并验证功能正常 | 4.3 | cc:TODO |
 

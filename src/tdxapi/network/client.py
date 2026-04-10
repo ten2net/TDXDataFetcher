@@ -8,7 +8,7 @@ import socket
 import time
 import struct
 import threading
-from typing import Optional
+from typing import Optional, Union
 
 from tdxapi.protocol.constants import (
     DEFAULT_SERVERS,
@@ -255,7 +255,7 @@ class TdxClient:
     # === 行情数据 ===
 
     @staticmethod
-    def _parse_market(market: str | int) -> int:
+    def _parse_market(market: Union[str, int]) -> int:
         """解析市场代码"""
         if isinstance(market, int):
             return market
