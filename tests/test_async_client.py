@@ -936,6 +936,7 @@ class TestBatchResult:
         assert result.total == 0
         assert result.success_count == 0
         assert result.failed_count == 0
+<<<<<<< HEAD
 
 
 @pytest.mark.asyncio
@@ -1258,3 +1259,5 @@ class TestAsyncClientStreamTransactions:
                 results.append(ticks)
 
             assert len(results) == 0
+=======
+>>>>>>> 99816fb (feat: Implement async batch request methods (Task 2.2))
