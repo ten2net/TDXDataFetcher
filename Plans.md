@@ -31,9 +31,9 @@ TDXDataFetcher (ten2net-tdxapi) 是一个通达信行情数据直连库，已实
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
 | 2.1 | AsyncTdxClient 类 | 基于 asyncio 实现异步客户端 | - | cc:完工 |
-| 2.2 | 异步批量请求 | 支持并发获取多只股票数据 | 2.1 | cc:TODO |
-| 2.3 | 异步流式接口 | 实现 async generator 返回实时数据流 | 2.1 | cc:TODO |
-| 2.4 | 连接池管理 | 支持多连接并发，连接复用 | 2.1 | cc:TODO |
+| 2.2 | 异步批量请求 | 支持并发获取多只股票数据 | 2.1 | cc:完工 |
+| 2.3 | 异步流式接口 | 实现 async generator 返回实时数据流 | 2.1 | cc:WIP |
+| 2.4 | 连接池管理 | 支持多连接并发，连接复用 | 2.1 | cc:WIP |
 
 ---
 

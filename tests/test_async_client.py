@@ -568,3 +568,371 @@ class TestAsyncClientImport:
         """测试 AsyncTdxClient 在 __all__ 中"""
         import tdxapi
         assert "AsyncTdxClient" in tdxapi.__all__
+
+    def test_import_batch_result(self):
+        """测试从 tdxapi 导入 BatchResult"""
+        from tdxapi import BatchResult
+        assert BatchResult is not None
+
+    def test_batch_result_in_all(self):
+        """测试 BatchResult 在 __all__ 中"""
+        import tdxapi
+        assert "BatchResult" in tdxapi.__all__
+
+
+@pytest.mark.asyncio
+class TestAsyncClientBatchQuotes:
+    """测试异步批量行情获取"""
+
+    async def test_batch_get_quotes(self):
+        """测试批量获取行情"""
+        client = AsyncTdxClient()
+
+        mock_quotes = {
+            "SH:600519": StockQuote(
+                code="600519",
+                market="SH",
+                name="贵州茅台",
+                price=1800.0,
+                last_close=1790.0,
+                open=1795.0,
+                high=1810.0,
+                low=1785.0,
+                volume=10000,
+                amount=18000000.0,
+                bid1=1799.0,
+                bid1_vol=100,
+                ask1=1801.0,
+                ask1_vol=100,
+                datetime=None,
+            ),
+            "SZ:000001": StockQuote(
+                code="000001",
+                market="SZ",
+                name="平安银行",
+                price=12.5,
+                last_close=12.3,
+                open=12.4,
+                high=12.6,
+                low=12.2,
+                volume=50000,
+                amount=625000.0,
+                bid1=12.4,
+                bid1_vol=200,
+                ask1=12.6,
+                ask1_vol=200,
+                datetime=None,
+            ),
+        }
+
+        call_count = 0
+
+        async def mock_get_quote(code, market):
+            nonlocal call_count
+            call_count += 1
+            key = f"{market.upper()}:{code}"
+            return mock_quotes.get(key)
+
+        with patch.object(client, 'get_quote', side_effect=mock_get_quote):
+            result = await client.batch_get_quotes(
+                [("SH", "600519"), ("SZ", "000001")],
+                max_concurrent=2
+            )
+
+            assert result.total == 2
+            assert result.success_count == 2
+            assert result.failed_count == 0
+            assert "SH:600519" in result.success
+            assert "SZ:000001" in result.success
+            assert result.success["SH:600519"].price == 1800.0
+            assert result.success["SZ:000001"].price == 12.5
+
+    async def test_batch_get_quotes_with_error(self):
+        """测试批量获取行情部分失败"""
+        client = AsyncTdxClient()
+
+        async def mock_get_quote(code, market):
+            if code == "600519":
+                raise ConnectionError("连接失败")
+            return StockQuote(
+                code=code,
+                market=market,
+                name="测试",
+                price=10.0,
+                last_close=9.0,
+                open=9.5,
+                high=10.5,
+                low=9.0,
+                volume=1000,
+                amount=10000.0,
+                bid1=9.9,
+                bid1_vol=100,
+                ask1=10.1,
+                ask1_vol=100,
+                datetime=None,
+            )
+
+        with patch.object(client, 'get_quote', side_effect=mock_get_quote):
+            result = await client.batch_get_quotes(
+                [("SH", "600519"), ("SZ", "000001")],
+                max_concurrent=2,
+                continue_on_error=True
+            )
+
+            assert result.total == 2
+            assert result.success_count == 1
+            assert result.failed_count == 1
+            assert "SH:600519" in result.failed
+            assert "SZ:000001" in result.success
+
+    async def test_batch_get_quotes_progress_callback(self):
+        """测试批量获取行情进度回调"""
+        client = AsyncTdxClient()
+
+        progress_calls = []
+
+        def progress_callback(completed, total, current_code):
+            progress_calls.append((completed, total, current_code))
+
+        async def mock_get_quote(code, market):
+            return StockQuote(
+                code=code,
+                market=market,
+                name="测试",
+                price=10.0,
+                last_close=9.0,
+                open=9.5,
+                high=10.5,
+                low=9.0,
+                volume=1000,
+                amount=10000.0,
+                bid1=9.9,
+                bid1_vol=100,
+                ask1=10.1,
+                ask1_vol=100,
+                datetime=None,
+            )
+
+        with patch.object(client, 'get_quote', side_effect=mock_get_quote):
+            await client.batch_get_quotes(
+                [("SH", "600519"), ("SZ", "000001"), ("SH", "600000")],
+                max_concurrent=2,
+                progress_callback=progress_callback
+            )
+
+            assert len(progress_calls) == 3
+            assert progress_calls[0][1] == 3  # total
+            assert progress_calls[-1][0] == 3  # completed = 3
+
+    async def test_batch_get_quotes_stop_on_error(self):
+        """测试批量获取行情遇到错误停止"""
+        client = AsyncTdxClient()
+
+        async def mock_get_quote(code, market):
+            raise ConnectionError("连接失败")
+
+        with patch.object(client, 'get_quote', side_effect=mock_get_quote):
+            with pytest.raises(ConnectionError):
+                await client.batch_get_quotes(
+                    [("SH", "600519"), ("SZ", "000001")],
+                    continue_on_error=False
+                )
+
+
+@pytest.mark.asyncio
+class TestAsyncClientBatchBars:
+    """测试异步批量K线获取"""
+
+    async def test_batch_get_bars(self):
+        """测试批量获取K线"""
+        client = AsyncTdxClient()
+
+        mock_bars = {
+            "SH:600519": [
+                Bar(code="600519", market="SH", datetime=None, open=1800.0, high=1810.0, low=1790.0, close=1805.0, volume=10000, amount=18050000.0),
+                Bar(code="600519", market="SH", datetime=None, open=1805.0, high=1815.0, low=1800.0, close=1810.0, volume=20000, amount=36200000.0),
+            ],
+            "SZ:000001": [
+                Bar(code="000001", market="SZ", datetime=None, open=12.0, high=12.5, low=11.8, close=12.3, volume=50000, amount=615000.0),
+            ],
+        }
+
+        async def mock_get_bars(code, market, period, count):
+            key = f"{market.upper()}:{code}"
+            return mock_bars.get(key, [])
+
+        with patch.object(client, 'get_bars', side_effect=mock_get_bars):
+            result = await client.batch_get_bars(
+                [("SH", "600519"), ("SZ", "000001")],
+                period="1d",
+                count=100,
+                max_concurrent=2
+            )
+
+            assert result.total == 2
+            assert result.success_count == 2
+            assert result.failed_count == 0
+            assert len(result.success["SH:600519"]) == 2
+            assert len(result.success["SZ:000001"]) == 1
+
+    async def test_batch_get_bars_with_error(self):
+        """测试批量获取K线部分失败"""
+        client = AsyncTdxClient()
+
+        async def mock_get_bars(code, market, period, count):
+            if code == "600519":
+                raise ConnectionError("连接失败")
+            return [Bar(code=code, market=market, datetime=None, open=10.0, high=11.0, low=9.0, close=10.5, volume=1000, amount=10000.0)]
+
+        with patch.object(client, 'get_bars', side_effect=mock_get_bars):
+            result = await client.batch_get_bars(
+                [("SH", "600519"), ("SZ", "000001")],
+                period="1d",
+                count=100,
+                continue_on_error=True
+            )
+
+            assert result.total == 2
+            assert result.success_count == 1
+            assert result.failed_count == 1
+            assert "SH:600519" in result.failed
+            assert "SZ:000001" in result.success
+
+    async def test_batch_get_bars_progress_callback(self):
+        """测试批量获取K线进度回调"""
+        client = AsyncTdxClient()
+
+        progress_calls = []
+
+        def progress_callback(completed, total, current_code):
+            progress_calls.append((completed, total, current_code))
+
+        async def mock_get_bars(code, market, period, count):
+            return [Bar(code=code, market=market, datetime=None, open=10.0, high=11.0, low=9.0, close=10.5, volume=1000, amount=10000.0)]
+
+        with patch.object(client, 'get_bars', side_effect=mock_get_bars):
+            await client.batch_get_bars(
+                [("SH", "600519"), ("SZ", "000001")],
+                period="1d",
+                count=100,
+                progress_callback=progress_callback
+            )
+
+            assert len(progress_calls) == 2
+            assert progress_calls[-1][0] == 2
+
+
+@pytest.mark.asyncio
+class TestAsyncClientBatchByCodes:
+    """测试自动判断市场的批量请求"""
+
+    async def test_batch_get_quotes_by_codes(self):
+        """测试通过代码列表自动判断市场"""
+        client = AsyncTdxClient()
+
+        received_calls = []
+
+        async def mock_get_quote(code, market):
+            received_calls.append((code, market))
+            return StockQuote(
+                code=code,
+                market=market,
+                name="测试",
+                price=10.0,
+                last_close=9.0,
+                open=9.5,
+                high=10.5,
+                low=9.0,
+                volume=1000,
+                amount=10000.0,
+                bid1=9.9,
+                bid1_vol=100,
+                ask1=10.1,
+                ask1_vol=100,
+                datetime=None,
+            )
+
+        with patch.object(client, 'get_quote', side_effect=mock_get_quote):
+            await client.batch_get_quotes_by_codes(
+                ["600519", "000001", "300001"],
+                max_concurrent=3
+            )
+
+            # 验证自动判断的市场
+            codes_markets = {(c, m) for c, m in received_calls}
+            assert ("600519", "SH") in codes_markets  # 6开头 -> SH
+            assert ("000001", "SZ") in codes_markets  # 0开头 -> SZ
+            assert ("300001", "SZ") in codes_markets  # 3开头 -> SZ
+
+    async def test_batch_get_quotes_by_codes_default_market(self):
+        """测试默认市场"""
+        client = AsyncTdxClient()
+
+        received_calls = []
+
+        async def mock_get_quote(code, market):
+            received_calls.append((code, market))
+            return StockQuote(
+                code=code,
+                market=market,
+                name="测试",
+                price=10.0,
+                last_close=9.0,
+                open=9.5,
+                high=10.5,
+                low=9.0,
+                volume=1000,
+                amount=10000.0,
+                bid1=9.9,
+                bid1_vol=100,
+                ask1=10.1,
+                ask1_vol=100,
+                datetime=None,
+            )
+
+        with patch.object(client, 'get_quote', side_effect=mock_get_quote):
+            await client.batch_get_quotes_by_codes(
+                ["688888"],  # 科创板，无法自动判断
+                default_market="SH",
+                max_concurrent=1
+            )
+
+            assert received_calls[0] == ("688888", "SH")
+
+
+class TestBatchResult:
+    """测试 BatchResult 数据类"""
+
+    def test_batch_result_repr(self):
+        """测试 BatchResult 字符串表示"""
+        from tdxapi.async_client import BatchResult
+
+        result = BatchResult(
+            success={"A": 1, "B": 2},
+            failed={"C": Exception("error")},
+            total=3,
+            success_count=2,
+            failed_count=1
+        )
+
+        repr_str = repr(result)
+        assert "BatchResult" in repr_str
+        assert "total=3" in repr_str
+        assert "success=2" in repr_str
+        assert "failed=1" in repr_str
+
+    def test_batch_result_empty(self):
+        """测试空的 BatchResult"""
+        from tdxapi.async_client import BatchResult
+
+        result = BatchResult(
+            success={},
+            failed={},
+            total=0,
+            success_count=0,
+            failed_count=0
+        )
+
+        assert result.total == 0
+        assert result.success_count == 0
+        assert result.failed_count == 0
