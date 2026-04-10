@@ -14,5 +14,6 @@ setup(
     install_requires=[],
     extras_require={
         "dev": ["pytest>=7.0"],
+        "compression": ["lz4>=4.0"],
     },
 )
