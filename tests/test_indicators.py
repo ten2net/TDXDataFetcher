@@ -734,3 +734,371 @@ class TestKDJ(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStdFunction(unittest.TestCase):
+    """测试 std() 函数 - 标准差"""
+
+    def test_std_basic(self):
+        """测试基本的标准差计算"""
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0]
+        result = std(prices, 3)
+        # 前2个为 None
+        self.assertIsNone(result[0])
+        self.assertIsNone(result[1])
+        # 窗口 [10, 11, 12]: mean=11, variance=((10-11)^2+(11-11)^2+(12-11)^2)/3=2/3, std=sqrt(2/3)
+        expected_std = (2.0/3.0) ** 0.5
+        self.assertAlmostEqual(result[2], expected_std, places=5)
+
+    def test_std_constant_values(self):
+        """测试常数值的标准差（应为0）"""
+        prices = [10.0, 10.0, 10.0, 10.0, 10.0]
+        result = std(prices, 3)
+        self.assertIsNone(result[0])
+        self.assertIsNone(result[1])
+        self.assertAlmostEqual(result[2], 0.0)
+        self.assertAlmostEqual(result[3], 0.0)
+        self.assertAlmostEqual(result[4], 0.0)
+
+    def test_std_empty_list(self):
+        """测试空列表"""
+        result = std([], 5)
+        self.assertEqual(result, [])
+
+    def test_std_invalid_period(self):
+        """测试无效的周期"""
+        with self.assertRaises(ValueError):
+            std([10.0, 11.0], 0)
+
+
+class TestBOLLClass(unittest.TestCase):
+    """测试 BOLL 类 - 布林带"""
+
+    def setUp(self):
+        """设置测试数据 - 25个价格数据，足够计算20日布林带"""
+        self.prices = [10.0 + i * 0.5 for i in range(25)]  # 10.0, 10.5, 11.0, ..., 22.0
+
+    def test_boll_basic(self):
+        """测试基本的布林带计算"""
+        boll = BOLL.calculate(self.prices, period=20, std_dev=2)
+
+        # 检查返回的三个序列长度正确
+        self.assertEqual(len(boll.up), 25)
+        self.assertEqual(len(boll.mid), 25)
+        self.assertEqual(len(boll.low), 25)
+
+        # 前19个应为 None（数据不足）
+        for i in range(19):
+            self.assertIsNone(boll.up[i])
+            self.assertIsNone(boll.mid[i])
+            self.assertIsNone(boll.low[i])
+
+        # 第20个及以后应有有效值
+        self.assertIsNotNone(boll.mid[19])
+        self.assertIsNotNone(boll.up[19])
+        self.assertIsNotNone(boll.low[19])
+
+        # 验证中轨是20日简单移动平均
+        expected_mid = sum(self.prices[0:20]) / 20
+        self.assertAlmostEqual(boll.mid[19], expected_mid, places=5)
+
+        # 验证上轨 = 中轨 + 2 * 标准差
+        # 验证下轨 = 中轨 - 2 * 标准差
+        mean = sum(self.prices[0:20]) / 20
+        variance = sum((p - mean) ** 2 for p in self.prices[0:20]) / 20
+        expected_std = variance ** 0.5
+        expected_up = mean + 2 * expected_std
+        expected_low = mean - 2 * expected_std
+
+        self.assertAlmostEqual(boll.up[19], expected_up, places=5)
+        self.assertAlmostEqual(boll.low[19], expected_low, places=5)
+
+    def test_boll_relationship(self):
+        """测试布林带三条线的关系"""
+        boll = BOLL.calculate(self.prices, period=20, std_dev=2)
+
+        # 对于有效值，应始终满足: up >= mid >= low
+        for i in range(19, 25):
+            self.assertGreaterEqual(boll.up[i], boll.mid[i])
+            self.assertGreaterEqual(boll.mid[i], boll.low[i])
+
+    def test_boll_with_bars(self):
+        """测试使用 Bar 列表计算布林带"""
+        bars = [
+            Bar("000001", "SZ", datetime(2024, 1, i+1), 10.0+i, 11.0+i, 9.0+i, 10.5+i, 1000, 10000.0)
+            for i in range(25)
+        ]
+        boll = BOLL.calculate(bars, period=20, std_dev=2, price_type="close")
+
+        self.assertEqual(len(boll.mid), 25)
+        # 前19个为 None
+        self.assertIsNone(boll.mid[0])
+        self.assertIsNotNone(boll.mid[19])
+
+    def test_boll_empty_list(self):
+        """测试空列表"""
+        boll = BOLL.calculate([], period=20, std_dev=2)
+        self.assertEqual(len(boll.up), 0)
+        self.assertEqual(len(boll.mid), 0)
+        self.assertEqual(len(boll.low), 0)
+
+    def test_boll_invalid_period(self):
+        """测试无效的周期"""
+        with self.assertRaises(ValueError):
+            BOLL.calculate(self.prices, period=0, std_dev=2)
+        with self.assertRaises(ValueError):
+            BOLL.calculate(self.prices, period=-1, std_dev=2)
+
+    def test_boll_invalid_std_dev(self):
+        """测试无效的标准差倍数"""
+        with self.assertRaises(ValueError):
+            BOLL.calculate(self.prices, period=20, std_dev=0)
+        with self.assertRaises(ValueError):
+            BOLL.calculate(self.prices, period=20, std_dev=-1)
+
+    def test_boll_different_std_dev(self):
+        """测试不同的标准差倍数"""
+        boll_1 = BOLL.calculate(self.prices, period=20, std_dev=1)
+        boll_2 = BOLL.calculate(self.prices, period=20, std_dev=2)
+        boll_3 = BOLL.calculate(self.prices, period=20, std_dev=3)
+
+        # std_dev 越大，带宽越大
+        bandwidth_1 = boll_1.up[19] - boll_1.low[19]
+        bandwidth_2 = boll_2.up[19] - boll_2.low[19]
+        bandwidth_3 = boll_3.up[19] - boll_3.low[19]
+
+        self.assertLess(bandwidth_1, bandwidth_2)
+        self.assertLess(bandwidth_2, bandwidth_3)
+
+    def test_boll_indexing(self):
+        """测试 BOLL 类的索引访问"""
+        boll = BOLL.calculate(self.prices, period=20, std_dev=2)
+
+        # 测试 __getitem__
+        up, mid, low = boll[19]
+        self.assertAlmostEqual(mid, boll.mid[19])
+        self.assertAlmostEqual(up, boll.up[19])
+        self.assertAlmostEqual(low, boll.low[19])
+
+    def test_boll_last(self):
+        """测试 BOLL.last() 方法"""
+        boll = BOLL.calculate(self.prices, period=20, std_dev=2)
+
+        up, mid, low = boll.last()
+        self.assertAlmostEqual(mid, boll.mid[-1])
+        self.assertAlmostEqual(up, boll.up[-1])
+        self.assertAlmostEqual(low, boll.low[-1])
+
+    def test_boll_last_empty(self):
+        """测试 BOLL.last() 空列表情况"""
+        boll = BOLL.calculate([], period=20, std_dev=2)
+        self.assertEqual(boll.last(), (None, None, None))
+
+    def test_boll_repr(self):
+        """测试 BOLL 的字符串表示"""
+        boll = BOLL.calculate(self.prices, period=20, std_dev=2)
+        repr_str = repr(boll)
+        self.assertIn("BOLL", repr_str)
+        self.assertIn("period=20", repr_str)
+        self.assertIn("std_dev=2", repr_str)
+
+    def test_boll_bandwidth(self):
+        """测试布林带宽度计算"""
+        boll = BOLL.calculate(self.prices, period=20, std_dev=2)
+        bandwidth = boll.bandwidth()
+
+        # 前19个应为 None
+        for i in range(19):
+            self.assertIsNone(bandwidth[i])
+
+        # 第20个及以后应有有效值
+        self.assertIsNotNone(bandwidth[19])
+        # Bandwidth = (UP - LOW) / MID * 100%
+        expected_bandwidth = (boll.up[19] - boll.low[19]) / boll.mid[19] * 100
+        self.assertAlmostEqual(bandwidth[19], expected_bandwidth, places=5)
+
+
+class TestBollFunction(unittest.TestCase):
+    """测试 boll() 函数"""
+
+    def setUp(self):
+        self.prices = [10.0 + i * 0.5 for i in range(25)]
+
+    def test_boll_function(self):
+        """测试 boll() 函数是 BOLL.calculate 的别名"""
+        result_func = boll(self.prices, period=20, std_dev=2)
+        result_class = BOLL.calculate(self.prices, period=20, std_dev=2)
+
+        self.assertEqual(result_func.up, result_class.up)
+        self.assertEqual(result_func.mid, result_class.mid)
+        self.assertEqual(result_func.low, result_class.low)
+
+
+class TestRSIFunction(unittest.TestCase):
+    """测试 rsi() 函数 - 相对强弱指标"""
+
+    def test_rsi_basic(self):
+        """测试基本的 RSI 计算"""
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0,
+                  20.0, 21.0, 22.0, 23.0, 24.0, 25.0]
+        result = rsi(prices, 14)
+        for i in range(14):
+            self.assertIsNone(result[i])
+        self.assertGreater(result[14], 90)
+
+    def test_rsi_falling(self):
+        """测试持续下跌情况的 RSI"""
+        prices = [25.0, 24.0, 23.0, 22.0, 21.0, 20.0, 19.0, 18.0, 17.0, 16.0,
+                  15.0, 14.0, 13.0, 12.0, 11.0, 10.0]
+        result = rsi(prices, 14)
+        for i in range(14):
+            self.assertIsNone(result[i])
+        self.assertLess(result[14], 10)
+
+    def test_rsi_empty_list(self):
+        """测试空列表"""
+        result = rsi([], 14)
+        self.assertEqual(result, [])
+
+    def test_rsi_invalid_period(self):
+        """测试无效的周期"""
+        with self.assertRaises(ValueError):
+            rsi([10.0, 11.0], 0)
+
+
+class TestRSIClass(unittest.TestCase):
+    """测试 RSI 类"""
+
+    def test_rsi_class_calculate(self):
+        """测试 RSI.calculate()"""
+        prices = list(range(1, 30))
+        rsi_obj = RSI.calculate(prices, 14)
+        self.assertEqual(rsi_obj.period, 14)
+
+    def test_rsi_convenience_methods(self):
+        """测试便捷的 RSI 计算方法"""
+        prices = list(range(1, 50))
+        self.assertEqual(RSI.rsi6(prices).period, 6)
+        self.assertEqual(RSI.rsi12(prices).period, 12)
+        self.assertEqual(RSI.rsi14(prices).period, 14)
+        self.assertEqual(RSI.rsi24(prices).period, 24)
+
+
+class TestMACDFunction(unittest.TestCase):
+    """测试 macd() 函数 - MACD 指标"""
+
+    def test_macd_basic(self):
+        """测试基本的 MACD 计算"""
+        # 生成足够的数据（至少需要 slow + signal = 35 个数据点才能有有效值）
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0,
+                  20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0,
+                  30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0,
+                  40.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0, 47.0, 48.0, 49.0]
+
+        result = macd(prices, fast=12, slow=26, signal=9)
+
+        # 检查返回结构
+        self.assertIn("dif", result)
+        self.assertIn("dea", result)
+        self.assertIn("macd", result)
+        self.assertIn("histogram", result)
+
+        # 检查长度与输入相同
+        self.assertEqual(len(result["dif"]), len(prices))
+        self.assertEqual(len(result["dea"]), len(prices))
+        self.assertEqual(len(result["macd"]), len(prices))
+        self.assertEqual(len(result["histogram"]), len(prices))
+
+        # macd 和 histogram 应该是相同的
+        self.assertEqual(result["macd"], result["histogram"])
+
+    def test_macd_empty_list(self):
+        """测试空列表"""
+        result = macd([])
+        self.assertEqual(result["dif"], [])
+        self.assertEqual(result["dea"], [])
+        self.assertEqual(result["macd"], [])
+        self.assertEqual(result["histogram"], [])
+
+    def test_macd_invalid_period_fast_zero(self):
+        """测试无效的 fast 周期（0）"""
+        with self.assertRaises(ValueError) as context:
+            macd([10.0, 11.0], fast=0, slow=26, signal=9)
+        self.assertIn("periods must be positive", str(context.exception))
+
+    def test_macd_invalid_period_slow_zero(self):
+        """测试无效的 slow 周期（0）"""
+        with self.assertRaises(ValueError) as context:
+            macd([10.0, 11.0], fast=12, slow=0, signal=9)
+        self.assertIn("periods must be positive", str(context.exception))
+
+    def test_macd_invalid_period_signal_zero(self):
+        """测试无效的 signal 周期（0）"""
+        with self.assertRaises(ValueError) as context:
+            macd([10.0, 11.0], fast=12, slow=26, signal=0)
+        self.assertIn("periods must be positive", str(context.exception))
+
+    def test_macd_invalid_fast_greater_than_slow(self):
+        """测试 fast >= slow 的错误"""
+        with self.assertRaises(ValueError) as context:
+            macd([10.0, 11.0], fast=26, slow=12, signal=9)
+        self.assertIn("fast period must be less than slow period", str(context.exception))
+
+    def test_macd_invalid_fast_equal_slow(self):
+        """测试 fast == slow 的错误"""
+        with self.assertRaises(ValueError) as context:
+            macd([10.0, 11.0], fast=12, slow=12, signal=9)
+        self.assertIn("fast period must be less than slow period", str(context.exception))
+
+    def test_macd_with_bars(self):
+        """测试使用 Bar 列表计算 MACD"""
+        from datetime import timedelta
+        base_date = datetime(2024, 1, 1)
+        bars = [
+            Bar(code="000001", market="SZ", datetime=base_date + timedelta(days=i),
+                open=10.0+i, high=11.0+i, low=9.0+i, close=10.5+i, volume=1000, amount=10000.0)
+            for i in range(40)
+        ]
+        result = macd(bars, fast=12, slow=26, signal=9, price_type="close")
+
+        # 检查返回结构
+        self.assertIn("dif", result)
+        self.assertIn("dea", result)
+        self.assertIn("macd", result)
+
+        # 检查长度与输入相同
+        self.assertEqual(len(result["dif"]), len(bars))
+
+    def test_macd_formula_correctness(self):
+        """测试 MACD 公式正确性"""
+        # 使用简单的价格序列验证公式
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0,
+                  20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0,
+                  30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0,
+                  40.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0, 47.0, 48.0, 49.0]
+
+        result = macd(prices, fast=12, slow=26, signal=9)
+
+        # 验证 MACD = (DIF - DEA) * 2
+        for i in range(len(prices)):
+            dif = result["dif"][i]
+            dea = result["dea"][i]
+            macd_val = result["macd"][i]
+
+            if dif is not None and dea is not None and macd_val is not None:
+                expected_macd = (dif - dea) * 2
+                self.assertAlmostEqual(macd_val, expected_macd, places=10)
+
+    def test_macd_custom_parameters(self):
+        """测试自定义 MACD 参数"""
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0,
+                  20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0,
+                  30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0]
+
+        # 使用自定义参数
+        result = macd(prices, fast=5, slow=10, signal=3)
+
+        # 检查返回结构正确
+        self.assertEqual(len(result["dif"]), len(prices))
+        self.assertEqual(len(result["dea"]), len(prices))
+        self.assertEqual(len(result["macd"]), len(prices))
