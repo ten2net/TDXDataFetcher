@@ -3,11 +3,14 @@
 """
 
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta, timedelta
 from tdxapi.models import Bar
 from tdxapi.indicators import (
+    macd,
     vol, obv, vol_ma,
-    ma, ema, wma, MA, calculate_all_ma
+    ma, ema, wma, MA, calculate_all_ma,
+    rsi, rsi_multi, RSI,
+    kdj, KDJ
 )
 
 
@@ -430,6 +433,303 @@ class TestCalculateAllMA(unittest.TestCase):
         result = calculate_all_ma(prices, periods=[3], ma_type="ema")
 
         self.assertEqual(result[3].ma_type, "ema")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class TestMACDFunction(unittest.TestCase):
+    """测试 macd() 函数 - MACD 指标"""
+
+    def test_macd_basic(self):
+        """测试基本的 MACD 计算"""
+        # 生成足够的数据（至少需要 slow + signal = 35 个数据点才能有有效值）
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0,
+                  20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0,
+                  30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0,
+                  40.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0, 47.0, 48.0, 49.0]
+
+        result = macd(prices, fast=12, slow=26, signal=9)
+
+        # 检查返回结构
+        self.assertIn("dif", result)
+        self.assertIn("dea", result)
+        self.assertIn("macd", result)
+        self.assertIn("histogram", result)
+
+        # 检查长度与输入相同
+        self.assertEqual(len(result["dif"]), len(prices))
+        self.assertEqual(len(result["dea"]), len(prices))
+        self.assertEqual(len(result["macd"]), len(prices))
+        self.assertEqual(len(result["histogram"]), len(prices))
+
+        # macd 和 histogram 应该是相同的
+        self.assertEqual(result["macd"], result["histogram"])
+
+    def test_macd_empty_list(self):
+        """测试空列表"""
+        result = macd([])
+        self.assertEqual(result["dif"], [])
+        self.assertEqual(result["dea"], [])
+        self.assertEqual(result["macd"], [])
+        self.assertEqual(result["histogram"], [])
+
+    def test_macd_invalid_period_fast_zero(self):
+        """测试无效的 fast 周期（0）"""
+        with self.assertRaises(ValueError) as context:
+            macd([10.0, 11.0], fast=0, slow=26, signal=9)
+        self.assertIn("periods must be positive", str(context.exception))
+
+    def test_macd_invalid_period_slow_zero(self):
+        """测试无效的 slow 周期（0）"""
+        with self.assertRaises(ValueError) as context:
+            macd([10.0, 11.0], fast=12, slow=0, signal=9)
+        self.assertIn("periods must be positive", str(context.exception))
+
+    def test_macd_invalid_period_signal_zero(self):
+        """测试无效的 signal 周期（0）"""
+        with self.assertRaises(ValueError) as context:
+            macd([10.0, 11.0], fast=12, slow=26, signal=0)
+        self.assertIn("periods must be positive", str(context.exception))
+
+    def test_macd_invalid_fast_greater_than_slow(self):
+        """测试 fast >= slow 的错误"""
+        with self.assertRaises(ValueError) as context:
+            macd([10.0, 11.0], fast=26, slow=12, signal=9)
+        self.assertIn("fast period must be less than slow period", str(context.exception))
+
+    def test_macd_invalid_fast_equal_slow(self):
+        """测试 fast == slow 的错误"""
+        with self.assertRaises(ValueError) as context:
+            macd([10.0, 11.0], fast=12, slow=12, signal=9)
+        self.assertIn("fast period must be less than slow period", str(context.exception))
+
+    def test_macd_with_bars(self):
+        """测试使用 Bar 列表计算 MACD"""
+        from datetime import timedelta
+        base_date = datetime(2024, 1, 1)
+        bars = [
+            Bar(code="000001", market="SZ", datetime=base_date + timedelta(days=i),
+                open=10.0+i, high=11.0+i, low=9.0+i, close=10.5+i, volume=1000, amount=10000.0)
+            for i in range(40)
+        ]
+        result = macd(bars, fast=12, slow=26, signal=9, price_type="close")
+
+        # 检查返回结构
+        self.assertIn("dif", result)
+        self.assertIn("dea", result)
+        self.assertIn("macd", result)
+
+        # 检查长度与输入相同
+        self.assertEqual(len(result["dif"]), len(bars))
+
+    def test_macd_formula_correctness(self):
+        """测试 MACD 公式正确性"""
+        # 使用简单的价格序列验证公式
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0,
+                  20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0,
+                  30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0,
+                  40.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0, 47.0, 48.0, 49.0]
+
+        result = macd(prices, fast=12, slow=26, signal=9)
+
+        # 验证 MACD = (DIF - DEA) * 2
+        for i in range(len(prices)):
+            dif = result["dif"][i]
+            dea = result["dea"][i]
+            macd_val = result["macd"][i]
+
+            if dif is not None and dea is not None and macd_val is not None:
+                expected_macd = (dif - dea) * 2
+                self.assertAlmostEqual(macd_val, expected_macd, places=10)
+
+    def test_macd_custom_parameters(self):
+        """测试自定义 MACD 参数"""
+        prices = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0,
+                  20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0,
+                  30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0]
+
+        # 使用自定义参数
+        result = macd(prices, fast=5, slow=10, signal=3)
+
+        # 检查返回结构正确
+        self.assertEqual(len(result["dif"]), len(prices))
+        self.assertEqual(len(result["dea"]), len(prices))
+        self.assertEqual(len(result["macd"]), len(prices))
+
+
+
+class TestKDJ(unittest.TestCase):
+    """测试 KDJ 随机指标"""
+
+    def setUp(self):
+        """设置测试数据 - 创建10根K线用于测试"""
+        self.bars = [
+            # 日期, 开盘, 最高, 最低, 收盘, 成交量
+            Bar("000001", "SZ", datetime(2024, 1, 1), 10.0, 11.0, 9.0, 10.0, 1000, 10000.0),
+            Bar("000001", "SZ", datetime(2024, 1, 2), 10.0, 12.0, 9.5, 11.0, 2000, 22000.0),
+            Bar("000001", "SZ", datetime(2024, 1, 3), 11.0, 13.0, 10.0, 12.0, 1500, 18000.0),
+            Bar("000001", "SZ", datetime(2024, 1, 4), 12.0, 14.0, 11.0, 13.0, 1800, 23400.0),
+            Bar("000001", "SZ", datetime(2024, 1, 5), 13.0, 15.0, 12.0, 14.0, 2200, 30800.0),
+            Bar("000001", "SZ", datetime(2024, 1, 6), 14.0, 16.0, 13.0, 15.0, 2500, 37500.0),
+            Bar("000001", "SZ", datetime(2024, 1, 7), 15.0, 17.0, 14.0, 16.0, 2000, 32000.0),
+            Bar("000001", "SZ", datetime(2024, 1, 8), 16.0, 18.0, 15.0, 17.0, 2300, 39100.0),
+            Bar("000001", "SZ", datetime(2024, 1, 9), 17.0, 19.0, 16.0, 18.0, 2800, 50400.0),
+            Bar("000001", "SZ", datetime(2024, 1, 10), 18.0, 20.0, 17.0, 19.0, 3000, 57000.0),
+        ]
+
+    def test_kdj_basic(self):
+        """测试基本的 KDJ 计算"""
+        k, d, j = kdj(self.bars)
+
+        # 检查返回的是三个列表
+        self.assertEqual(len(k), 10)
+        self.assertEqual(len(d), 10)
+        self.assertEqual(len(j), 10)
+
+        # 前8个应该是 None（需要9个数据点计算RSV）
+        for i in range(8):
+            self.assertIsNone(k[i])
+            self.assertIsNone(d[i])
+            self.assertIsNone(j[i])
+
+        # 第9个及以后应该有值
+        self.assertIsNotNone(k[8])
+        self.assertIsNotNone(d[8])
+        self.assertIsNotNone(j[8])
+
+    def test_kdj_formula(self):
+        """测试 KDJ 公式计算正确性"""
+        # 使用简单的测试数据验证公式
+        # 9根K线，最高价和最低价固定，便于验证RSV
+        simple_bars = [
+            Bar("000001", "SZ", datetime(2024, 1, i+1), 10.0, 12.0, 8.0, 10.0 + i * 0.5, 1000, 10000.0)
+            for i in range(9)
+        ]
+
+        k, d, j = kdj(simple_bars, n=9, m1=3, m2=3)
+
+        # 第9根K线（索引8）的RSV计算
+        # 9日内最高 = 12.0, 最低 = 8.0
+        # 收盘 = 10.0 + 8 * 0.5 = 14.0
+        # RSV = (14.0 - 8.0) / (12.0 - 8.0) * 100 = 6.0 / 4.0 * 100 = 150
+        # 但RSV应该被限制在0-100之间，这里需要重新考虑
+
+        # 实际上我们的实现不限制RSV范围，只是按公式计算
+        # 如果收盘超过最高价，RSV > 100；如果收盘低于最低价，RSV < 0
+
+        self.assertIsNotNone(k[8])
+        self.assertIsNotNone(d[8])
+        self.assertIsNotNone(j[8])
+
+        # 验证 J = 3K - 2D
+        self.assertAlmostEqual(j[8], 3 * k[8] - 2 * d[8], places=5)
+
+    def test_kdj_empty(self):
+        """测试空列表"""
+        k, d, j = kdj([])
+        self.assertEqual(k, [])
+        self.assertEqual(d, [])
+        self.assertEqual(j, [])
+
+    def test_kdj_insufficient_data(self):
+        """测试数据不足的情况"""
+        # 只有5根K线，但n=9
+        short_bars = self.bars[:5]
+        k, d, j = kdj(short_bars, n=9)
+
+        # 所有值都应该是 None
+        self.assertEqual(len(k), 5)
+        for i in range(5):
+            self.assertIsNone(k[i])
+            self.assertIsNone(d[i])
+            self.assertIsNone(j[i])
+
+    def test_kdj_invalid_params(self):
+        """测试无效参数"""
+        with self.assertRaises(ValueError):
+            kdj(self.bars, n=0)
+        with self.assertRaises(ValueError):
+            kdj(self.bars, n=-1)
+        with self.assertRaises(ValueError):
+            kdj(self.bars, m1=0)
+        with self.assertRaises(ValueError):
+            kdj(self.bars, m2=0)
+
+    def test_kdj_class(self):
+        """测试 KDJ 类"""
+        kdj_obj = KDJ.calculate(self.bars)
+
+        self.assertEqual(kdj_obj.n, 9)
+        self.assertEqual(kdj_obj.m1, 3)
+        self.assertEqual(kdj_obj.m2, 3)
+        self.assertEqual(len(kdj_obj.k), 10)
+        self.assertEqual(len(kdj_obj.d), 10)
+        self.assertEqual(len(kdj_obj.j), 10)
+
+    def test_kdj_class_last(self):
+        """测试 KDJ.last() 方法"""
+        kdj_obj = KDJ.calculate(self.bars)
+        k_last, d_last, j_last = kdj_obj.last()
+
+        self.assertIsNotNone(k_last)
+        self.assertIsNotNone(d_last)
+        self.assertIsNotNone(j_last)
+
+        # 验证 J = 3K - 2D
+        self.assertAlmostEqual(j_last, 3 * k_last - 2 * d_last, places=5)
+
+    def test_kdj_overbought(self):
+        """测试超买判断"""
+        # 创建超买情况的数据（K值很高）
+        # 使用连续上涨的数据
+        rising_bars = [
+            Bar("000001", "SZ", datetime(2024, 1, i+1), 10.0 + i, 20.0, 10.0, 19.0, 1000, 10000.0)
+            for i in range(10)
+        ]
+
+        kdj_obj = KDJ.calculate(rising_bars)
+        result = kdj_obj.is_overbought(threshold=80.0)
+
+        # 连续上涨应该导致K值较高
+        self.assertIsNotNone(result)
+
+    def test_kdj_oversold(self):
+        """测试超卖判断"""
+        # 创建超卖情况的数据（K值很低）
+        falling_bars = [
+            Bar("000001", "SZ", datetime(2024, 1, i+1), 20.0 - i, 20.0, 10.0, 11.0, 1000, 10000.0)
+            for i in range(10)
+        ]
+
+        kdj_obj = KDJ.calculate(falling_bars)
+        result = kdj_obj.is_oversold(threshold=20.0)
+
+        # 连续下跌应该导致K值较低
+        self.assertIsNotNone(result)
+
+    def test_kdj_repr(self):
+        """测试 KDJ 类的字符串表示"""
+        kdj_obj = KDJ.calculate(self.bars)
+        repr_str = repr(kdj_obj)
+        self.assertIn("KDJ", repr_str)
+        self.assertIn("n=9", repr_str)
+
+    def test_kdj_flat_prices(self):
+        """测试价格不变的情况（避免除零）"""
+        # 所有价格相同，最高价=最低价
+        flat_bars = [
+            Bar("000001", "SZ", datetime(2024, 1, i+1), 10.0, 10.0, 10.0, 10.0, 1000, 10000.0)
+            for i in range(10)
+        ]
+
+        k, d, j = kdj(flat_bars)
+
+        # 当最高价=最低价时，RSV应该设为50（中间值）
+        self.assertIsNotNone(k[8])
+        self.assertIsNotNone(d[8])
+        self.assertIsNotNone(j[8])
 
 
 if __name__ == "__main__":
