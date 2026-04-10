@@ -4,6 +4,12 @@ from tdxapi.async_client import AsyncTdxClient, BatchResult
 from tdxapi.connection_pool import TdxConnectionPool, PooledClient, PoolStats
 from tdxapi.models import StockQuote, Bar, Tick
 from tdxapi.protocol.constants import Market
+from tdxapi.subscription import (
+    QuoteSubscription,
+    MultiQuoteSubscription,
+    SubscriptionConfig,
+    SubscriptionStats,
+)
 
 __version__ = "0.1.0"
 __all__ = [
@@ -18,6 +24,10 @@ __all__ = [
     "Bar",
     "Tick",
     "Market",
+    "QuoteSubscription",
+    "MultiQuoteSubscription",
+    "SubscriptionConfig",
+    "SubscriptionStats",
 ]
 
 # 导出功能在导入时按需加载

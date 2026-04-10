@@ -36,8 +36,8 @@ TDXDataFetcher (ten2net-tdxapi) 是一个通达信行情数据直连库，已实
 | 2.3 | 异步流式接口 | 实现 async generator 返回实时数据流 | 2.1 | cc:完工 |
 | 2.4 | 连接池管理 | 支持多连接并发，连接复用 | 2.1 | cc:完工 |
 =======
-| 2.3 | 异步流式接口 | 实现 async generator 返回实时数据流 | 2.1 | cc:WIP |
-| 2.4 | 连接池管理 | 支持多连接并发，连接复用 | 2.1 | cc:WIP |
+| 2.3 | 异步流式接口 | 实现 async generator 返回实时数据流 | 2.1 | cc:完工 [3c11230] |
+| 2.4 | 连接池管理 | 支持多连接并发，连接复用 | 2.1 | cc:完工 [3605668] |
 >>>>>>> 99816fb (feat: Implement async batch request methods (Task 2.2))
 
 ---
@@ -46,7 +46,7 @@ TDXDataFetcher (ten2net-tdxapi) 是一个通达信行情数据直连库，已实
 
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
-| 3.1 | 轮询订阅模式 | 实现 `subscribe_quotes()` 定时轮询 | - | cc:TODO |
+| 3.1 | 轮询订阅模式 | 实现 `subscribe_quotes()` 定时轮询 | - | cc:完工 |
 | 3.2 | 回调接口设计 | 支持注册回调函数处理数据更新 | 3.1 | cc:TODO |
 | 3.3 | 变化检测机制 | 只在价格变动时触发回调 | 3.1 | cc:TODO |
 | 3.4 | 多股票订阅管理 | 支持同时订阅多只股票，统一调度 | 3.1 | cc:TODO |
